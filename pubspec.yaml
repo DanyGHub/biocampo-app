@@ -1,0 +1,55 @@
+name: biocampo_app
+description: "BioCampo - Sistema Móvil Offline-First para Avistamientos de Biodiversidad en Entornos Naturales"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Persistencia Local Transaccional (SQLite WAL)
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  path_provider: ^2.1.1
+
+  # Geolocalización Satelital (GNSS background & coordinates)
+  geolocator: ^10.1.0
+
+  # Captura Multimedia & Cámara
+  camera: ^0.10.5+5
+  image: ^4.1.3
+
+  # Criptografía e Integridad (SHA-256 inmutable & Almacenamiento seguro)
+  crypto: ^3.0.3
+  flutter_secure_storage: ^9.0.0
+
+  # Empaquetado y Exportación Darwin Core Archive (ZIP)
+  archive: ^3.4.9
+  intl: ^0.18.1
+
+  # Iconos ergonómicos y UI
+  cupertino_icons: ^1.0.6
+  shared_preferences: ^2.5.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+
+  # Linter y Análisis Estático PSP
+  flutter_lints: ^3.0.0
+
+  # Mocks para Pruebas Unitarias
+  mocktail: ^1.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Configuración para soporte offline de fuentes y assets
+  assets:
+    - assets/catalogo/
+    - assets/mbtiles/
