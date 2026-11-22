@@ -1,22 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
-
-// Interfaz preliminar para fase RED de TDD
-abstract class CatalogoTaxonomicoService {
-  static Future<List<Map<String, String>>> buscarEspecieDarwinCore({
-    required String query,
-  }) async {
-    // Fase ROJO de TDD: La funcionalidad aún no está codificada
-    throw UnimplementedError(
-      'TDD Rojo: CatalogoTaxonomicoService.buscarEspecieDarwinCore() no está implementado aún.',
-    );
-  }
-}
+import 'package:biocampo_app/features/reports/domain/services/catalogo_taxonomico_service.dart';
 
 void main() {
   group('HU-02: Catálogo taxonómico offline con búsqueda predictiva (BIOC-3)', () {
     test('CP-HU02.1: Autocompletado Darwin Core en < 200 ms con prefijo >= 2 caracteres', () async {
-      // Autor Conductor: Ángel Daniel López Rodríguez
-      // Autor Copiloto: Cindy Fabiola Hernández Muñoz
+      // Conductor XP: Ángel Daniel López Rodríguez
+      // Copiloto XP: Cindy Fabiola Hernández Muñoz
       const query = 'Pin';
 
       final stopwatch = Stopwatch()..start();

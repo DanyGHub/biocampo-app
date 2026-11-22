@@ -1,23 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
-
-// Interfaz preliminar para fase RED de TDD
-abstract class CsvExportService {
-  static Future<String> generarArchivoCsvLocal({
-    required List<Map<String, dynamic>> registros,
-    required String nombreArchivo,
-  }) async {
-    // Fase ROJO de TDD: La funcionalidad aún no está codificada
-    throw UnimplementedError(
-      'TDD Rojo: CsvExportService.generarArchivoCsvLocal() no está implementado aún.',
-    );
-  }
-}
+import 'package:biocampo_app/features/reports/domain/services/csv_export_service.dart';
 
 void main() {
   group('HU-03: Exportación local de muestreos a formato CSV (BIOC-4)', () {
     test('CP-HU03.1: Generación tabular RFC 4180 en UTF-8 y guardado mediante SAF', () async {
-      // Autor Conductor: Ángel Daniel López Rodríguez
-      // Autor Copiloto: Reyli Uvaldo Martínez Hernández
+      // Conductor XP: Ángel Daniel López Rodríguez
+      // Copiloto XP: Reyli Uvaldo Martínez Hernández
       final muestraReportes = [
         {
           'id': 1,

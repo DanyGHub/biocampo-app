@@ -1,25 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
-
-// Definición preliminar de interfaz para fase RED de TDD
-abstract class FotoEvidenciaService {
-  static Future<Map<String, dynamic>> comprimirYVincular({
-    required String rutaTemporal,
-    required int reporteId,
-    required double latitud,
-    required double longitud,
-  }) async {
-    // Fase ROJO de TDD: La funcionalidad aún no está codificada
-    throw UnimplementedError(
-      'TDD Rojo: FotoEvidenciaService.comprimirYVincular() no está implementado aún.',
-    );
-  }
-}
+import 'package:biocampo_app/features/reports/domain/services/foto_evidencia_service.dart';
 
 void main() {
   group('HU-01: Captura fotográfica rápida y asociación atómica (BIOC-1)', () {
     test('CP-HU01.1: Compresión adaptativa JPEG < 350 KB y persistencia de ruta relativa', () async {
-      // Autor Conductor: Cindy Fabiola Hernández Muñoz
-      // Autor Copiloto: Ángel Daniel López Rodríguez
+      // Conductor XP: Cindy Fabiola Hernández Muñoz
+      // Copiloto XP: Ángel Daniel López Rodríguez
       const int reporteId = 101;
       const String dummyPath = '/cache/raw_cam_20261118.jpg';
       const double lat = 21.8853;
