@@ -81,6 +81,7 @@ class AppDatabase {
     ''');
 
     // Tabla 2: Reporte de Avistamiento con FK explícita hacia usuario (1:N)
+    // Extendido en Sprint 1 con columnas de foto, taxonomía Darwin Core y hábitat
     await db.execute('''
       CREATE TABLE IF NOT EXISTS reporte_avistamiento (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -91,6 +92,12 @@ class AppDatabase {
         altitud REAL NOT NULL DEFAULT 0.0,
         precision_gps REAL NOT NULL DEFAULT 0.0,
         nombre_comun TEXT NOT NULL,
+        nombre_cientifico TEXT,
+        foto_path TEXT,
+        foto_bytes_base64 TEXT,
+        sustrato TEXT DEFAULT 'No determinado',
+        estrato TEXT DEFAULT 'No determinado',
+        condicion TEXT DEFAULT 'No determinado',
         notas TEXT,
         estado_sync TEXT NOT NULL DEFAULT 'PENDIENTE',
         FOREIGN KEY (usuario_id) REFERENCES usuario (id) ON DELETE CASCADE
@@ -153,6 +160,18 @@ class AppDatabase {
         'rol': 'Coordinadora de Campo',
         'ultimo_login': null,
       });
+
+      // Usuario de prueba docente para evaluación de entrega (Sesión 4)
+      const saltDocente = 'salt_biocampo_docente_2026';
+      final hashDocente = hashPassword('BioCampo2026!', saltDocente);
+      await _sqliteDb!.insert('usuario', {
+        'matricula': 'docente_eval',
+        'nombre_completo': 'MITC. Beatriz Osorio (Docente Evaluadora)',
+        'password_hash': hashDocente,
+        'salt': saltDocente,
+        'rol': 'Evaluador Académico',
+        'ultimo_login': null,
+      });
     }
   }
 
@@ -180,6 +199,19 @@ class AppDatabase {
         'password_hash': hash2,
         'salt': salt2,
         'rol': 'Coordinadora de Campo',
+        'ultimo_login': null,
+      });
+
+      // Usuario de evaluación docente para despliegue Web/Móvil
+      const saltDocente = 'salt_biocampo_docente_2026';
+      final hashDocente = hashPassword('BioCampo2026!', saltDocente);
+      _memUsuarios.add({
+        'id': _nextUsuarioId++,
+        'matricula': 'docente_eval',
+        'nombre_completo': 'MITC. Beatriz Osorio (Docente Evaluadora)',
+        'password_hash': hashDocente,
+        'salt': saltDocente,
+        'rol': 'Evaluador Académico',
         'ultimo_login': null,
       });
     }

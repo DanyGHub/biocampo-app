@@ -1,6 +1,7 @@
 /// Modelo de Dominio: Reporte de Avistamiento de Biodiversidad
 /// Representa el registro de campo generado por un biólogo en una expedición.
 /// Posee una relación relacional N:1 con la entidad Usuario (usuario_id).
+/// Incluye campos del Incremento del Sprint 1 (HU-01 a HU-04: foto, taxonomía Darwin Core y hábitat).
 class ReporteModel {
   final int? id;
   final int usuarioId; // Clave foránea (FK) hacia tabla 'usuario'
@@ -13,6 +14,14 @@ class ReporteModel {
   final String notas; // Observaciones de campo
   final String estadoSync; // 'PENDIENTE', 'SINCRONIZADO'
 
+  // Incremento Sprint 1: HU-01 (Foto), HU-02 (Darwin Core) y HU-04 (Hábitat)
+  final String? fotoPath; // Ruta de persistencia relativa Zero-Cloud (HU-01)
+  final String? fotoBytesBase64; // Serialización de imagen para visualización Web/Móvil
+  final String? nombreCientifico; // Estándar Darwin Core (HU-02)
+  final String sustrato; // Variable ecológica de microhábitat (HU-04)
+  final String estrato; // Variable ecológica de microhábitat (HU-04)
+  final String condicion; // Variable ecológica de microhábitat (HU-04)
+
   const ReporteModel({
     this.id,
     required this.usuarioId,
@@ -24,6 +33,12 @@ class ReporteModel {
     required this.nombreComun,
     this.notas = '',
     this.estadoSync = 'PENDIENTE',
+    this.fotoPath,
+    this.fotoBytesBase64,
+    this.nombreCientifico,
+    this.sustrato = 'No determinado',
+    this.estrato = 'No determinado',
+    this.condicion = 'No determinado',
   });
 
   /// Mapeo desde registro de SQLite / JSON
@@ -39,6 +54,12 @@ class ReporteModel {
       nombreComun: map['nombre_comun'] as String,
       notas: (map['notas'] as String?) ?? '',
       estadoSync: (map['estado_sync'] as String?) ?? 'PENDIENTE',
+      fotoPath: map['foto_path'] as String?,
+      fotoBytesBase64: map['foto_bytes_base64'] as String?,
+      nombreCientifico: map['nombre_cientifico'] as String?,
+      sustrato: (map['sustrato'] as String?) ?? 'No determinado',
+      estrato: (map['estrato'] as String?) ?? 'No determinado',
+      condicion: (map['condicion'] as String?) ?? 'No determinado',
     );
   }
 
@@ -54,6 +75,12 @@ class ReporteModel {
       'nombre_comun': nombreComun,
       'notas': notas,
       'estado_sync': estadoSync,
+      'foto_path': fotoPath,
+      'foto_bytes_base64': fotoBytesBase64,
+      'nombre_cientifico': nombreCientifico,
+      'sustrato': sustrato,
+      'estrato': estrato,
+      'condicion': condicion,
     };
     if (id != null) {
       map['id'] = id;
@@ -72,6 +99,12 @@ class ReporteModel {
     String? nombreComun,
     String? notas,
     String? estadoSync,
+    String? fotoPath,
+    String? fotoBytesBase64,
+    String? nombreCientifico,
+    String? sustrato,
+    String? estrato,
+    String? condicion,
   }) {
     return ReporteModel(
       id: id ?? this.id,
@@ -84,11 +117,17 @@ class ReporteModel {
       nombreComun: nombreComun ?? this.nombreComun,
       notas: notas ?? this.notas,
       estadoSync: estadoSync ?? this.estadoSync,
+      fotoPath: fotoPath ?? this.fotoPath,
+      fotoBytesBase64: fotoBytesBase64 ?? this.fotoBytesBase64,
+      nombreCientifico: nombreCientifico ?? this.nombreCientifico,
+      sustrato: sustrato ?? this.sustrato,
+      estrato: estrato ?? this.estrato,
+      condicion: condicion ?? this.condicion,
     );
   }
 
   @override
   String toString() {
-    return 'ReporteModel(id: $id, usuarioId: $usuarioId, especie: $nombreComun, lat: $latitud, lon: $longitud, sync: $estadoSync)';
+    return 'ReporteModel(id: $id, usuarioId: $usuarioId, especie: $nombreComun, sci: $nombreCientifico, sustrato: $sustrato, estrato: $estrato, condicion: $condicion, foto: $fotoPath, lat: $latitud, lon: $longitud, sync: $estadoSync)';
   }
 }
