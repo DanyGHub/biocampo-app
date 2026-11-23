@@ -64,7 +64,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Future<void> _seleccionarFoto(ImageSource source) async {
     try {
       final picker = ImagePicker();
-      final picked = await picker.pickImage(source: source, maxWidth: 1280, maxHeight: 1280, imageQuality: 85);
+      final picked = await picker.pickImage(
+        source: source,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 75,
+      );
       if (picked != null) {
         final bytes = await picked.readAsBytes();
         final telemetry = _currentTelemetry ?? await LocationService.getCurrentLocation();
@@ -75,17 +80,33 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           longitud: telemetry.longitude,
         );
 
-        setState(() {
-          _fotoBytes = bytes;
-          _fotoBase64 = base64Encode(bytes);
-          _fotoPath = resultado['ruta_relativa'] as String?;
-          _fotoSizeBytes = resultado['size_bytes'] as int?;
-          _fotoSeleccionada = true;
-        });
+        if (mounted) {
+          setState(() {
+            _fotoBytes = bytes;
+            _fotoBase64 = base64Encode(bytes);
+            _fotoPath = picked.name.isNotEmpty ? picked.name : (resultado['ruta_relativa'] as String?);
+            _fotoSizeBytes = bytes.length;
+            _fotoSeleccionada = true;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Foto real capturada y comprimida exitosamente (${(bytes.length / 1024).toStringAsFixed(1)} KB ≤ 350 KB).'),
+              backgroundColor: const Color(0xFF00796B),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
       }
     } catch (e) {
-      debugPrint('[HomeScreen] Fallback al seleccionar foto: $e');
-      _generarFotoDemo();
+      debugPrint('[HomeScreen] Error al seleccionar foto real: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No fue posible acceder a la cámara/galería ($e). Selecciona una imagen desde tus archivos.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
@@ -1509,6 +1530,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     height: 160,
                     width: double.infinity,
                     fit: BoxFit.cover,
+                    errorBuilder: (ctx, err, stack) => Container(
+                      height: 160,
+                      color: const Color(0xFFE2E8F0),
+                      alignment: Alignment.center,
+                      child: const Text('Foto capturada (vista previa no disponible)', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -1568,11 +1595,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              TextButton.icon(
-                icon: const Icon(Icons.image_outlined, size: 16, color: Color(0xFF0284C7)),
-                label: const Text('Generar Foto de Muestra (Demo Campo)', style: TextStyle(fontSize: 12, color: Color(0xFF0284C7))),
-                onPressed: _generarFotoDemo,
+              const SizedBox(height: 10),
+              const Text(
+                'Captura la evidencia directamente con el lente de tu dispositivo o selecciona una fotografía de tu galería.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
               ),
             ],
           ),
@@ -1989,6 +2016,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                             height: 120,
                             width: double.infinity,
                             fit: BoxFit.cover,
+                            errorBuilder: (ctx, err, stack) => Container(
+                              height: 60,
+                              color: const Color(0xFFE2E8F0),
+                              alignment: Alignment.center,
+                              child: const Text('Evidencia fotográfica adjunta', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                            ),
                           ),
                         ),
                       ] else if (r.fotoPath != null) ...[

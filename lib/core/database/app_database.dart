@@ -16,7 +16,7 @@ class AppDatabase {
   AppDatabase._internal();
 
   static const String _dbName = 'biocampo_local.db';
-  static const int _dbVersion = 1;
+  static const int _dbVersion = 2;
   static const String _webReportsKey = 'biocampo_web_reports_json';
 
   sqflite.Database? _sqliteDb;
@@ -46,15 +46,22 @@ class AppDatabase {
         path,
         version: _dbVersion,
         onCreate: _onCreate,
+        onUpgrade: _onUpgrade,
         onConfigure: _onConfigure,
       );
 
       debugPrint('[AppDatabase] Base de datos SQLite inicializada exitosamente en: $path');
-      await _seedSQLite();
+      await _asegurarEsquemaYUsuarios(_sqliteDb!);
     } catch (e) {
       debugPrint('[AppDatabase] Advertencia al abrir SQLite nativo ($e). Activando modo adaptativo.');
       await _seedInMemory();
     }
+  }
+
+  /// Migración incremental de base de datos SQLite entre versiones
+  Future<void> _onUpgrade(sqflite.Database db, int oldVersion, int newVersion) async {
+    debugPrint('[AppDatabase] Migrando base de datos SQLite de v$oldVersion a v$newVersion...');
+    await _asegurarEsquemaYUsuarios(db);
   }
 
   /// Configuración de Pragmas SQLite (WAL y Claves Foráneas)
@@ -130,54 +137,94 @@ class AppDatabase {
     return sha256.convert(bytes).toString();
   }
 
-  /// Inserción de biólogos de prueba en SQLite si la tabla está vacía
-  Future<void> _seedSQLite() async {
-    if (_sqliteDb == null) return;
-    final count = sqflite.Sqflite.firstIntValue(
-      await _sqliteDb!.rawQuery('SELECT COUNT(*) FROM usuario;'),
-    );
+  /// Asegura la existencia de todas las columnas y usuarios semilla en SQLite,
+  /// migrando dinámicamente si la app se actualizó sobre una base de datos existente.
+  Future<void> _asegurarEsquemaYUsuarios(sqflite.Database db) async {
+    // 1. Migración defensiva: asegurar columnas del Sprint 1 en reporte_avistamiento
+    try {
+      final columnsInfo = await db.rawQuery('PRAGMA table_info(reporte_avistamiento);');
+      final existingColumns = columnsInfo.map((c) => c['name'] as String).toSet();
 
-    if (count == 0) {
-      debugPrint('[AppDatabase] Insertando datos semilla de biólogos en SQLite...');
-      const salt1 = 'salt_biocampo_carlos_2026';
-      final hash1 = hashPassword('BioCampo2026!', salt1);
-      await _sqliteDb!.insert('usuario', {
-        'matricula': 'biologo1',
-        'nombre_completo': 'Dr. Carlos Gómez (Biólogo de Campo)',
-        'password_hash': hash1,
-        'salt': salt1,
-        'rol': 'Investigador Titular',
-        'ultimo_login': null,
-      });
+      final Map<String, String> requiredColumns = {
+        'nombre_cientifico': 'TEXT',
+        'foto_path': 'TEXT',
+        'foto_bytes_base64': 'TEXT',
+        'sustrato': "TEXT DEFAULT 'No determinado'",
+        'estrato': "TEXT DEFAULT 'No determinado'",
+        'condicion': "TEXT DEFAULT 'No determinado'",
+      };
 
-      const salt2 = 'salt_biocampo_elena_2026';
-      final hash2 = hashPassword('Selva2026!', salt2);
-      await _sqliteDb!.insert('usuario', {
-        'matricula': 'investigador2',
-        'nombre_completo': 'Dra. Elena Ramos (Coordinadora de Expedición)',
-        'password_hash': hash2,
-        'salt': salt2,
-        'rol': 'Coordinadora de Campo',
-        'ultimo_login': null,
-      });
+      for (var entry in requiredColumns.entries) {
+        if (!existingColumns.contains(entry.key)) {
+          debugPrint('[AppDatabase] Migración dinámica: Agregando columna ${entry.key} a reporte_avistamiento');
+          await db.execute('ALTER TABLE reporte_avistamiento ADD COLUMN ${entry.key} ${entry.value};');
+        }
+      }
+    } catch (e) {
+      debugPrint('[AppDatabase] Advertencia al migrar columnas de reporte_avistamiento: $e');
+    }
 
-      // Usuario de prueba docente para evaluación de entrega (Sesión 4)
-      const saltDocente = 'salt_biocampo_docente_2026';
-      final hashDocente = hashPassword('BioCampo2026!', saltDocente);
-      await _sqliteDb!.insert('usuario', {
-        'matricula': 'docente_eval',
-        'nombre_completo': 'MITC. Beatriz Osorio (Docente Evaluadora)',
-        'password_hash': hashDocente,
-        'salt': saltDocente,
-        'rol': 'Evaluador Académico',
-        'ultimo_login': null,
-      });
+    // 2. Asegurar que los usuarios requeridos existan en SQLite
+    try {
+      // 2.1 biologo1
+      final count1 = sqflite.Sqflite.firstIntValue(
+        await db.rawQuery("SELECT COUNT(*) FROM usuario WHERE matricula = 'biologo1';"),
+      ) ?? 0;
+      if (count1 == 0) {
+        const salt1 = 'salt_biocampo_carlos_2026';
+        final hash1 = hashPassword('BioCampo2026!', salt1);
+        await db.insert('usuario', {
+          'matricula': 'biologo1',
+          'nombre_completo': 'Dr. Carlos Gómez (Biólogo de Campo)',
+          'password_hash': hash1,
+          'salt': salt1,
+          'rol': 'Investigador Titular',
+          'ultimo_login': null,
+        });
+      }
+
+      // 2.2 investigador2
+      final count2 = sqflite.Sqflite.firstIntValue(
+        await db.rawQuery("SELECT COUNT(*) FROM usuario WHERE matricula = 'investigador2';"),
+      ) ?? 0;
+      if (count2 == 0) {
+        const salt2 = 'salt_biocampo_elena_2026';
+        final hash2 = hashPassword('Selva2026!', salt2);
+        await db.insert('usuario', {
+          'matricula': 'investigador2',
+          'nombre_completo': 'Dra. Elena Ramos (Coordinadora de Expedición)',
+          'password_hash': hash2,
+          'salt': salt2,
+          'rol': 'Coordinadora de Campo',
+          'ultimo_login': null,
+        });
+      }
+
+      // 2.3 docente_eval (Evaluadora Académica)
+      final countDocente = sqflite.Sqflite.firstIntValue(
+        await db.rawQuery("SELECT COUNT(*) FROM usuario WHERE matricula = 'docente_eval';"),
+      ) ?? 0;
+      if (countDocente == 0) {
+        const saltDocente = 'salt_biocampo_docente_2026';
+        final hashDocente = hashPassword('BioCampo2026!', saltDocente);
+        await db.insert('usuario', {
+          'matricula': 'docente_eval',
+          'nombre_completo': 'MITC. Beatriz Osorio (Docente Evaluadora)',
+          'password_hash': hashDocente,
+          'salt': saltDocente,
+          'rol': 'Evaluador Académico',
+          'ultimo_login': null,
+        });
+        debugPrint('[AppDatabase] Usuario docente_eval asegurado en SQLite.');
+      }
+    } catch (e) {
+      debugPrint('[AppDatabase] Error al asegurar usuarios semilla en SQLite: $e');
     }
   }
 
   /// Inserción de datos semilla en memoria (Web / Pruebas)
   Future<void> _seedInMemory() async {
-    if (_memUsuarios.isEmpty) {
+    if (!_memUsuarios.any((u) => u['matricula'] == 'biologo1')) {
       const salt1 = 'salt_biocampo_carlos_2026';
       final hash1 = hashPassword('BioCampo2026!', salt1);
       _memUsuarios.add({
@@ -189,7 +236,9 @@ class AppDatabase {
         'rol': 'Investigador Titular',
         'ultimo_login': null,
       });
+    }
 
+    if (!_memUsuarios.any((u) => u['matricula'] == 'investigador2')) {
       const salt2 = 'salt_biocampo_elena_2026';
       final hash2 = hashPassword('Selva2026!', salt2);
       _memUsuarios.add({
@@ -201,8 +250,10 @@ class AppDatabase {
         'rol': 'Coordinadora de Campo',
         'ultimo_login': null,
       });
+    }
 
-      // Usuario de evaluación docente para despliegue Web/Móvil
+    // Usuario de evaluación docente para despliegue Web/Móvil
+    if (!_memUsuarios.any((u) => u['matricula'] == 'docente_eval')) {
       const saltDocente = 'salt_biocampo_docente_2026';
       final hashDocente = hashPassword('BioCampo2026!', saltDocente);
       _memUsuarios.add({
