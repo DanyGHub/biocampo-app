@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:biocampo_app/core/database/app_database.dart';
 import 'package:biocampo_app/features/auth/domain/services/auth_service.dart';
 import 'package:biocampo_app/features/location/domain/services/location_service.dart';
@@ -61,6 +62,153 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  /// Captura de evidencia fotográfica interactiva estilo WhatsApp (HU-01)
+  /// Solicita permisos multimedia a nivel de sistema operativo y abre la cámara nativa del usuario.
+  Future<void> _capturarConCamara() async {
+    try {
+      // 1. Petición explícita de permisos de cámara y multimedia (Android/iOS)
+      if (!kIsWeb) {
+        final cameraStatus = await Permission.camera.request();
+        if (cameraStatus.isPermanentlyDenied) {
+          if (mounted) {
+            _mostrarDialogoPermisoCamara();
+          }
+          return;
+        } else if (cameraStatus.isDenied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Se requiere permiso de cámara para capturar la evidencia del espécimen.'),
+                backgroundColor: Color(0xFFC62828),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
+        }
+      }
+
+      // 2. Apertura del obturador de cámara del dispositivo del individuo
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 75,
+        preferredCameraDevice: CameraDevice.rear,
+      );
+
+      if (picked != null) {
+        final bytes = await picked.readAsBytes();
+        final telemetry = _currentTelemetry ?? await LocationService.getCurrentLocation();
+        final resultado = await FotoEvidenciaService.comprimirYVincular(
+          rutaTemporal: picked.path,
+          reporteId: DateTime.now().millisecondsSinceEpoch % 10000,
+          latitud: telemetry.latitude,
+          longitud: telemetry.longitude,
+        );
+
+        if (mounted) {
+          setState(() {
+            _fotoBytes = bytes;
+            _fotoBase64 = base64Encode(bytes);
+            _fotoPath = picked.name.isNotEmpty ? picked.name : (resultado['ruta_relativa'] as String?);
+            _fotoSizeBytes = bytes.length;
+            _fotoSeleccionada = true;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Foto capturada y almacenada en el reporte (${(bytes.length / 1024).toStringAsFixed(1)} KB ≤ 350 KB).'),
+              backgroundColor: const Color(0xFF00796B),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[HomeScreen] Error al capturar con la cámara: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No fue posible abrir la cámara ($e). Puedes elegir una imagen de la galería.'),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  void _mostrarDialogoPermisoCamara() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.camera_alt_rounded, color: Color(0xFFC62828)),
+            SizedBox(width: 8),
+            Text('Permiso de Cámara', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          'Para capturar la fotografía del espécimen es necesario habilitar los permisos multimedia en los ajustes de tu dispositivo.',
+          style: TextStyle(fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00796B)),
+            onPressed: () {
+              Navigator.pop(ctx);
+              openAppSettings();
+            },
+            child: const Text('Abrir Ajustes', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _mostrarFotoAmpliada(BuildContext context, Uint8List bytes, String titulo) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppBar(
+              title: Text(titulo, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+              backgroundColor: const Color(0xFF00796B),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+              leading: IconButton(
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            ),
+            InteractiveViewer(
+              panEnabled: true,
+              minScale: 0.8,
+              maxScale: 4.0,
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+                child: Image.memory(bytes, fit: BoxFit.contain),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _seleccionarFoto(ImageSource source) async {
     try {
       final picker = ImagePicker();
@@ -90,7 +238,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Foto real capturada y comprimida exitosamente (${(bytes.length / 1024).toStringAsFixed(1)} KB ≤ 350 KB).'),
+              content: Text('Foto seleccionada y comprimida (${(bytes.length / 1024).toStringAsFixed(1)} KB ≤ 350 KB).'),
               backgroundColor: const Color(0xFF00796B),
               duration: const Duration(seconds: 2),
             ),
@@ -98,11 +246,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         }
       }
     } catch (e) {
-      debugPrint('[HomeScreen] Error al seleccionar foto real: $e');
+      debugPrint('[HomeScreen] Error al seleccionar foto: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('No fue posible acceder a la cámara/galería ($e). Selecciona una imagen desde tus archivos.'),
+            content: Text('No fue posible seleccionar la imagen ($e).'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -1509,7 +1657,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
         const SizedBox(height: 6),
         const Text(
-          'Captura fotográfica comprimida (< 350 KB) con persistencia Zero-Cloud.',
+          'Captura fotográfica interactiva (< 350 KB) con persistencia Zero-Cloud integrada bajo el reporte.',
           style: TextStyle(fontSize: 13.5, color: Color(0xFF64748B)),
         ),
         const SizedBox(height: 20),
@@ -1518,89 +1666,126 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           decoration: BoxDecoration(
             color: const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: const Color(0xFFCBD5E1), style: BorderStyle.solid),
+            border: Border.all(
+              color: _fotoSeleccionada ? const Color(0xFF00796B) : const Color(0xFFCBD5E1),
+              width: _fotoSeleccionada ? 1.5 : 1,
+            ),
           ),
           child: Column(
             children: [
               if (_fotoBytes != null) ...[
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(14),
                   child: Image.memory(
                     _fotoBytes!,
-                    height: 160,
+                    height: 220,
                     width: double.infinity,
                     fit: BoxFit.cover,
                     errorBuilder: (ctx, err, stack) => Container(
-                      height: 160,
+                      height: 180,
                       color: const Color(0xFFE2E8F0),
                       alignment: Alignment.center,
-                      child: const Text('Foto capturada (vista previa no disponible)', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                      child: const Text('Foto capturada correctamente', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0F2F1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF80CBC4)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.check_circle_rounded, color: Color(0xFF00796B), size: 18),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${_fotoPath ?? "captura_campo.jpg"} · ${((_fotoSizeBytes ?? 286720) / 1024).toStringAsFixed(1)} KB (≤ 350 KB Zero-Cloud)',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF004D40)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.check_circle_rounded, color: Color(0xFF00796B), size: 18),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        '${_fotoPath ?? "evidencia.jpg"} · ${((_fotoSizeBytes ?? 286720) / 1024).toStringAsFixed(1)} KB (<= 350 KB)',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF00796B)),
-                        textAlign: TextAlign.center,
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00796B),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
+                      icon: const Icon(Icons.camera_alt_rounded, size: 18),
+                      label: const Text('Volver a capturar', style: TextStyle(fontWeight: FontWeight.bold)),
+                      onPressed: _capturarConCamara,
+                    ),
+                    const SizedBox(width: 10),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.photo_library_outlined, size: 18),
+                      label: const Text('De galería'),
+                      onPressed: () => _seleccionarFoto(ImageSource.gallery),
                     ),
                   ],
                 ),
               ] else ...[
-                const Icon(
-                  Icons.photo_camera_rounded,
-                  size: 48,
-                  color: Color(0xFF94A3B8),
+                Container(
+                  width: 76,
+                  height: 76,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFE0F2F1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.photo_camera_rounded,
+                    size: 40,
+                    color: Color(0xFF00796B),
+                  ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 14),
                 const Text(
-                  'Sin fotografía adjunta',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
+                  'Tomar Fotografía del Espécimen',
+                  style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 const Text(
-                  'Toma una foto con tu cámara o selecciona un archivo de imagen.',
-                  style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                  'Presiona "Capturar" para solicitar permisos de multimedia y abrir directamente la cámara del dispositivo.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 20),
+                // Botón principal interactivo de Captura estilo WhatsApp
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00796B),
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(52),
+                    elevation: 3,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  icon: const Icon(Icons.camera_alt_rounded, size: 22),
+                  label: const Text(
+                    'Capturar',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                  ),
+                  onPressed: _capturarConCamara,
+                ),
+                const SizedBox(height: 10),
+                TextButton.icon(
+                  style: TextButton.styleFrom(foregroundColor: const Color(0xFF64748B)),
+                  icon: const Icon(Icons.photo_library_outlined, size: 18),
+                  label: const Text('O seleccionar desde la galería / archivos', style: TextStyle(fontSize: 12.5)),
+                  onPressed: () => _seleccionarFoto(ImageSource.gallery),
                 ),
               ],
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00796B),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    icon: const Icon(Icons.camera_alt_rounded, size: 18),
-                    label: const Text('Cámara'),
-                    onPressed: () => _seleccionarFoto(ImageSource.camera),
-                  ),
-                  const SizedBox(width: 10),
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    icon: const Icon(Icons.photo_library_outlined, size: 18),
-                    label: const Text('Galería / Archivo'),
-                    onPressed: () => _seleccionarFoto(ImageSource.gallery),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Captura la evidencia directamente con el lente de tu dispositivo o selecciona una fotografía de tu galería.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
-              ),
             ],
           ),
         ),
@@ -1683,7 +1868,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     : 'Pendientes',
               ),
               const Divider(height: 16),
-              _summaryRow('Fotografía (HU-01):', _fotoSeleccionada ? '${_fotoPath ?? "evidencia.jpg"} (Comprimida <= 350 KB)' : 'Sin foto adjunta'),
+              _summaryRow('Fotografía (HU-01):', _fotoSeleccionada ? '${_fotoPath ?? "captura_campo.jpg"} (Comprimida ≤ 350 KB)' : 'Sin foto adjunta'),
+              if (_fotoBytes != null) ...[
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.memory(
+                    _fotoBytes!,
+                    height: 160,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -2006,21 +2203,64 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         ],
                       ),
 
-                      // Fotografía adjunta (HU-01)
-                      if (r.fotoBytesBase64 != null) ...[
-                        const SizedBox(height: 10),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: Image.memory(
-                            base64Decode(r.fotoBytesBase64!),
-                            height: 120,
-                            width: double.infinity,
-                            fit: BoxFit.cover,
-                            errorBuilder: (ctx, err, stack) => Container(
-                              height: 60,
-                              color: const Color(0xFFE2E8F0),
-                              alignment: Alignment.center,
-                              child: const Text('Evidencia fotográfica adjunta', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                      // Fotografía de Evidencia implementada bajo el reporte (HU-01)
+                      if (r.fotoBytesBase64 != null && r.fotoBytesBase64!.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        GestureDetector(
+                          onTap: () {
+                            try {
+                              final decoded = base64Decode(r.fotoBytesBase64!);
+                              _mostrarFotoAmpliada(context, decoded, 'Evidencia: ${r.nombreComun}');
+                            } catch (_) {}
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                ClipRRect(
+                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+                                  child: Image.memory(
+                                    base64Decode(r.fotoBytesBase64!),
+                                    height: 180,
+                                    width: double.infinity,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (ctx, err, stack) => Container(
+                                      height: 90,
+                                      color: const Color(0xFFF1F5F9),
+                                      alignment: Alignment.center,
+                                      child: const Text('Evidencia fotográfica adjunta', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFF8FAFC),
+                                    borderRadius: BorderRadius.vertical(bottom: Radius.circular(11)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.camera_alt_rounded, size: 14, color: Color(0xFF00796B)),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          r.fotoPath ?? 'evidencia_campo.jpg',
+                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF00796B)),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const Text(
+                                        'Toca para ampliar 🔍',
+                                        style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
