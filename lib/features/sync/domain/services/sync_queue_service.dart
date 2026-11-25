@@ -1,15 +1,14 @@
-/// HU-06: cola FIFO inicial en memoria, sin duplicados.
+import 'sync_queue_storage.dart';
+
+/// HU-06: cola FIFO de reportes sin duplicados.
+/// Usa memoria por defecto; permite sustituir el almacenamiento.
 class SyncQueueService {
-  final List<String> _pending = [];
+  final SyncQueueStorage _storage;
 
-  Future<void> enqueue(String reportId) async {
-    // TODO(refactor): separar el almacenamiento de la politica de encolado.
-    if (!_pending.contains(reportId)) {
-      _pending.add(reportId);
-    }
-  }
+  SyncQueueService({SyncQueueStorage? storage})
+      : _storage = storage ?? InMemorySyncQueueStorage();
 
-  Future<List<String>> pendingIds() async {
-    return List<String>.from(_pending);
-  }
+  Future<void> enqueue(String reportId) => _storage.addIfAbsent(reportId);
+
+  Future<List<String>> pendingIds() => _storage.readAll();
 }

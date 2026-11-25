@@ -8,28 +8,29 @@ import 'package:pointycastle/export.dart';
 /// Sin una clave externa, la clave vive solamente durante esta instancia.
 /// La persistencia segura de claves y la identidad real aun no estan integradas.
 class CoordinateProtectionService {
+  static const int _keyLengthBytes = 32;
+  static const int _nonceLengthBytes = 12;
+  static const int _tagLengthBits = 128;
+  static const int _minimumPayloadLength =
+      _nonceLengthBytes + _tagLengthBits ~/ 8;
+
   final Random _random = Random.secure();
   late final Uint8List _key;
 
   CoordinateProtectionService({Uint8List? key}) {
-    if (key != null && key.length != 32) {
+    if (key != null && key.length != _keyLengthBytes) {
       throw ArgumentError('AES-256 requiere una clave de 32 bytes');
     }
-    _key = key == null
-        ? Uint8List.fromList(List.generate(32, (_) => _random.nextInt(256)))
-        : Uint8List.fromList(key);
+    _key =
+        key == null ? _randomBytes(_keyLengthBytes) : Uint8List.fromList(key);
   }
 
   String protect(String coordinate) {
-    final nonce =
-        Uint8List.fromList(List.generate(12, (_) => _random.nextInt(256)));
-    // TODO(refactor): extraer la configuracion comun de AES-GCM de ambos metodos.
-    final cipher = GCMBlockCipher(AESEngine());
-    cipher.init(
-        true, AEADParameters(KeyParameter(_key), 128, nonce, Uint8List(0)));
+    final nonce = _randomBytes(_nonceLengthBytes);
+    final cipher = _createCipher(encrypting: true, nonce: nonce);
     final encrypted =
         cipher.process(Uint8List.fromList(utf8.encode(coordinate)));
-    // Formato inicial: nonce (12 bytes) + texto cifrado + etiqueta (16 bytes).
+    // Formato conservado: nonce + texto cifrado + etiqueta de autenticacion.
     return base64Encode(Uint8List.fromList([...nonce, ...encrypted]));
   }
 
@@ -38,17 +39,30 @@ class CoordinateProtectionService {
 
     try {
       final payload = base64Decode(encrypted);
-      if (payload.length < 28) return null;
-      final nonce = Uint8List.fromList(payload.sublist(0, 12));
-      final cipher = GCMBlockCipher(AESEngine());
-      cipher.init(
-          false, AEADParameters(KeyParameter(_key), 128, nonce, Uint8List(0)));
-      final plainText = cipher.process(Uint8List.fromList(payload.sublist(12)));
+      if (payload.length < _minimumPayloadLength) return null;
+      final nonce = Uint8List.fromList(payload.sublist(0, _nonceLengthBytes));
+      final cipher = _createCipher(encrypting: false, nonce: nonce);
+      final plainText = cipher
+          .process(Uint8List.fromList(payload.sublist(_nonceLengthBytes)));
       return utf8.decode(plainText);
     } on FormatException {
       return null;
     } on InvalidCipherTextException {
       return null;
     }
+  }
+
+  Uint8List _randomBytes(int length) =>
+      Uint8List.fromList(List.generate(length, (_) => _random.nextInt(256)));
+
+  GCMBlockCipher _createCipher({
+    required bool encrypting,
+    required Uint8List nonce,
+  }) {
+    return GCMBlockCipher(AESEngine())
+      ..init(
+          encrypting,
+          AEADParameters(
+              KeyParameter(_key), _tagLengthBits, nonce, Uint8List(0)));
   }
 }

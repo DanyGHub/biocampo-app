@@ -1,0 +1,109 @@
+00:00 +0: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/crypto_manager_test.dart
+00:00 +0: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/crypto_manager_test.dart: CP-07: Pruebas Unitarias de Criptografía e Integridad SHA-256 Debe generar un hash SHA-256 determinista de 64 caracteres hexadecimales
+00:00 +1: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/crypto_manager_test.dart: CP-07: Pruebas Unitarias de Criptografía e Integridad SHA-256 Debe detectar cualquier alteración en los bytes de la muestra (Inmutabilidad)
+00:00 +2: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/database_and_auth_test.dart
+00:01 +2: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/database_and_auth_test.dart: Paso 1: Pruebas Unitarias de Base de Datos Relacional y Modelos CP-01.1: Inicialización de BD y Carga de Datos Semilla de Biólogos
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+00:01 +3: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/database_and_auth_test.dart: Paso 1: Pruebas Unitarias de Base de Datos Relacional y Modelos CP-01.2: Integridad Relacional 1:N entre Usuario y Reportes
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+00:01 +4: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/database_and_auth_test.dart: Paso 1: Pruebas Unitarias de Base de Datos Relacional y Modelos CP-01.3: Violación de Clave Foránea lanza Excepción
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+00:01 +5: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/database_and_auth_test.dart: Paso 1: Pruebas Unitarias de Base de Datos Relacional y Modelos CP-01.4: Edición / Modificación de Reporte en Base de Datos
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+00:01 +6: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/database_and_auth_test.dart: Paso 1: Pruebas Unitarias de Base de Datos Relacional y Modelos CP-01.5: Eliminación de Reporte en Base de Datos
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+00:01 +7: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/database_and_auth_test.dart: Paso 1: Pruebas Unitarias del Servicio JWT (RFC 7519) CP-02.1: Generación y Firma Determinista de Token JWT (HS256)
+00:01 +8: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/database_and_auth_test.dart: Paso 1: Pruebas Unitarias del Servicio JWT (RFC 7519) CP-02.2: Decodificación y Extracción de Claims del JWT
+00:01 +9: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/database_and_auth_test.dart: Paso 1: Pruebas Unitarias del Servicio JWT (RFC 7519) CP-02.3: Detección Inmediata de Adulteración en Firma o Payload
+00:01 +10: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/database_and_auth_test.dart: Paso 1: Pruebas Unitarias de Autenticación con Credenciales CP-03.1: Login Exitoso con Credenciales de Biólogo y Emisión de JWT
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+00:01 +11: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/database_and_auth_test.dart: Paso 1: Pruebas Unitarias de Autenticación con Credenciales CP-03.2: Login Rechazado por Contraseña Incorrecta
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+00:01 +12: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/database_and_auth_test.dart: Paso 1: Pruebas Unitarias de Autenticación con Credenciales CP-03.3: Login Rechazado por Usuario Inexistente
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+00:01 +13: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/database_and_auth_test.dart: Paso 1: Pruebas Unitarias de Autenticación con Credenciales CP-03.4: Persistencia Relacional de Sesión JWT en SQLite y Restauración Automática
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+00:01 +14: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/database_and_auth_test.dart: Paso 1: Pruebas Unitarias de Autenticación con Credenciales CP-03.5: Cierre de Sesión Desactiva Registro en SQLite
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+00:01 +15: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/location_service_test.dart
+00:02 +15: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/location_service_test.dart: Paso 3: Pruebas Unitarias de Geolocalización GNSS y Operación Verificable CP-04.1: Adquisición de Telemetría GNSS y Estructura de Datos
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+[LocationService] Excepción de hardware GNSS: MissingPluginException(No implementation found for method isLocationServiceEnabled on channel flutter.baseflow.com/geolocator). Activando telemetría de campo.
+00:02 +16: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/location_service_test.dart: Paso 3: Pruebas Unitarias de Geolocalización GNSS y Operación Verificable CP-04.2: Verificación de Criterio de Calidad RNF-05 (Error radial <= 5m)
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+00:02 +17: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/location_service_test.dart: Paso 3: Pruebas Unitarias de Geolocalización GNSS y Operación Verificable CP-04.3: Conversión Cartográfica a Grados, Minutos y Segundos (DMS)
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+00:02 +18: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/location_service_test.dart: Paso 3: Pruebas Unitarias de Geolocalización GNSS y Operación Verificable CP-05: Operación Verificable - Inserción Relacional con Telemetría GPS en SQLite
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+[LocationService] Excepción de hardware GNSS: MissingPluginException(No implementation found for method isLocationServiceEnabled on channel flutter.baseflow.com/geolocator). Activando telemetría de campo.
+00:02 +19: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart
+00:03 +19: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart: RED-01 | HU-05 | Conductor: Reyli | Copiloto: Fabiola | carga marcadores locales sin conexion
+00:03 +20: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart: RED-02 | HU-06 | Conductor: Fabiola | Copiloto: Reyli | evita duplicados y conserva orden FIFO
+00:03 +21: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart: RED-03 | HU-07 | Conductor: Reyli | Copiloto: Fabiola | protege coordenadas y restringe acceso exacto
+00:03 +22: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s07_coordinate_protection_test.dart
+00:04 +22: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s07_coordinate_protection_test.dart: HU-07: comprobaciones adicionales de proteccion Cifrar dos veces usa nonces diferentes y permite recuperar el dato
+00:04 +23: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s07_coordinate_protection_test.dart: HU-07: comprobaciones adicionales de proteccion Rechaza un mensaje cuya etiqueta fue alterada
+00:04 +24: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s07_coordinate_protection_test.dart: HU-07: comprobaciones adicionales de proteccion Solo otra instancia con la misma clave puede recuperar el dato
+00:04 +25: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s07_coordinate_protection_test.dart: HU-07: comprobaciones adicionales de proteccion Rechaza datos incompletos o con formato invalido
+00:04 +26: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s07_coordinate_protection_test.dart: HU-07: comprobaciones adicionales de proteccion Rechaza claves que no tengan 256 bits
+00:04 +27: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/sprint1_hu01_foto_test.dart
+00:05 +27: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/sprint1_hu01_foto_test.dart: HU-01: Captura fotográfica rápida y asociación atómica (BIOC-1) CP-HU01.1: Compresión adaptativa JPEG < 350 KB y persistencia de ruta relativa
+00:06 +28: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/sprint1_hu02_catalogo_test.dart
+00:06 +28: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/sprint1_hu02_catalogo_test.dart: HU-02: Catálogo taxonómico offline con búsqueda predictiva (BIOC-3) CP-HU02.1: Autocompletado Darwin Core en < 200 ms con prefijo >= 2 caracteres
+00:07 +29: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/sprint1_hu03_csv_export_test.dart
+00:07 +29: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/sprint1_hu03_csv_export_test.dart: HU-03: Exportación local de muestreos a formato CSV (BIOC-4) CP-HU03.1: Generación tabular RFC 4180 en UTF-8 y guardado mediante SAF
+00:07 +30: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/sprint1_hu04_habitat_test.dart
+00:08 +30: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/sprint1_hu04_habitat_test.dart: HU-04: Formulario de hábitat y variables ecológicas (BIOC-5) CP-HU04.1: Validación de microhábitat con selectores One-Hand y fallback seguro
+00:08 +31: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/sync_queue_service_test.dart
+00:09 +31: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/sync_queue_service_test.dart: HU-06: almacenamiento de la cola Dos servicios con el mismo almacenamiento comparten pendientes unicos
+00:09 +32: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/sync_queue_service_test.dart: HU-06: almacenamiento de la cola Las instancias por defecto mantienen colas independientes
+00:09 +33: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/sync_queue_service_test.dart: HU-06: almacenamiento de la cola Modificar una consulta no modifica los pendientes almacenados
+00:09 +34: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/widget_test.dart
+00:11 +34: C:/Users/reyli/Documents/GIT/biocampo-app/test/widget_test.dart: CP-Widget: Flujo Limpio de Login y Acceso al Dashboard
+[AppDatabase] Advertencia al abrir SQLite nativo (Bad state: databaseFactory not initialized
+databaseFactory is only initialized when using sqflite. When using `sqflite_common_ffi`
+You must call `databaseFactory = databaseFactoryFfi;` before using global openDatabase API
+). Activando modo adaptativo.
+00:13 +35: All tests passed!
