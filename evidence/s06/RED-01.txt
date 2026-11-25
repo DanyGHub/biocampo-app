@@ -1,0 +1,11 @@
+00:00 +0: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart
+00:00 +0: RED-01 | HU-05 | Conductor: Reyli | Copiloto: Fabiola | carga marcadores locales sin conexion
+00:00 +0 -1: RED-01 | HU-05 | Conductor: Reyli | Copiloto: Fabiola | carga marcadores locales sin conexion [E]
+  UnimplementedError: HU-05: carga offline pendiente
+  package:biocampo_app/features/map/domain/services/offline_map_service.dart 5:5  OfflineMapService.loadMarkers
+  test\unit\s06_red_test.dart 14:35                                               main.<fn>
+  
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart: RED-01 | HU-05 | Conductor: Reyli | Copiloto: Fabiola | carga marcadores locales sin conexion
