@@ -1,0 +1,25 @@
+00:00 +0: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart
+00:00 +0: RED-01 | HU-05 | Conductor: Reyli | Copiloto: Fabiola | carga marcadores locales sin conexion
+00:00 +0 -1: RED-01 | HU-05 | Conductor: Reyli | Copiloto: Fabiola | carga marcadores locales sin conexion [E]
+  UnimplementedError: HU-05: carga offline pendiente
+  package:biocampo_app/features/map/domain/services/offline_map_service.dart 5:5  OfflineMapService.loadMarkers
+  test\unit\s06_red_test.dart 14:35                                               main.<fn>
+  
+00:00 +0 -1: RED-02 | HU-06 | Conductor: Fabiola | Copiloto: Reyli | evita duplicados y conserva orden FIFO
+00:00 +0 -2: RED-02 | HU-06 | Conductor: Fabiola | Copiloto: Reyli | evita duplicados y conserva orden FIFO [E]
+  UnimplementedError: HU-06: encolado idempotente pendiente
+  package:biocampo_app/features/sync/domain/services/sync_queue_service.dart 4:5  SyncQueueService.enqueue
+  test\unit\s06_red_test.dart 26:17                                               main.<fn>
+  
+00:00 +0 -2: RED-03 | HU-07 | Conductor: Reyli | Copiloto: Fabiola | protege coordenadas y restringe acceso exacto
+00:00 +0 -3: RED-03 | HU-07 | Conductor: Reyli | Copiloto: Fabiola | protege coordenadas y restringe acceso exacto [E]
+  UnimplementedError: HU-07: proteccion de coordenadas pendiente
+  package:biocampo_app/features/security/domain/services/coordinate_protection_service.dart 4:5  CoordinateProtectionService.protect
+  test\unit\s06_red_test.dart 39:31                                                              main.<fn>
+  
+00:00 +0 -3: Some tests failed.
+
+Failing tests:
+  C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart: RED-01 | HU-05 | Conductor: Reyli | Copiloto: Fabiola | carga marcadores locales sin conexion
+  C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart: RED-02 | HU-06 | Conductor: Fabiola | Copiloto: Reyli | evita duplicados y conserva orden FIFO
+  C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart: RED-03 | HU-07 | Conductor: Reyli | Copiloto: Fabiola | protege coordenadas y restringe acceso exacto

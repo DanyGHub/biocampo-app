@@ -1,0 +1,11 @@
+00:00 +0: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart
+00:00 +0: RED-03 | HU-07 | Conductor: Reyli | Copiloto: Fabiola | protege coordenadas y restringe acceso exacto
+00:00 +0 -1: RED-03 | HU-07 | Conductor: Reyli | Copiloto: Fabiola | protege coordenadas y restringe acceso exacto [E]
+  UnimplementedError: HU-07: proteccion de coordenadas pendiente
+  package:biocampo_app/features/security/domain/services/coordinate_protection_service.dart 4:5  CoordinateProtectionService.protect
+  test\unit\s06_red_test.dart 39:31                                                              main.<fn>
+  
+00:00 +0 -1: Some tests failed.
+
+Failing tests:
+  C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart: RED-03 | HU-07 | Conductor: Reyli | Copiloto: Fabiola | protege coordenadas y restringe acceso exacto
