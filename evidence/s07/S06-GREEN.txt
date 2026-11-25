@@ -1,0 +1,5 @@
+00:00 +0: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart
+00:00 +0: RED-01 | HU-05 | Conductor: Reyli | Copiloto: Fabiola | carga marcadores locales sin conexion
+00:00 +1: RED-02 | HU-06 | Conductor: Fabiola | Copiloto: Reyli | evita duplicados y conserva orden FIFO
+00:00 +2: RED-03 | HU-07 | Conductor: Reyli | Copiloto: Fabiola | protege coordenadas y restringe acceso exacto
+00:00 +3: All tests passed!

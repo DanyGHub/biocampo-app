@@ -1,10 +1,15 @@
-/// HU-06: contrato inicial S06. Pendiente implementar en la fase GREEN.
+/// HU-06: cola FIFO inicial en memoria, sin duplicados.
 class SyncQueueService {
+  final List<String> _pending = [];
+
   Future<void> enqueue(String reportId) async {
-    throw UnimplementedError('HU-06: encolado idempotente pendiente');
+    // TODO(refactor): separar el almacenamiento de la politica de encolado.
+    if (!_pending.contains(reportId)) {
+      _pending.add(reportId);
+    }
   }
 
   Future<List<String>> pendingIds() async {
-    throw UnimplementedError('HU-06: consulta FIFO pendiente');
+    return List<String>.from(_pending);
   }
 }
