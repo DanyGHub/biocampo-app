@@ -1,7 +1,8 @@
-/// HU-05: contrato inicial S06. Pendiente implementar en la fase GREEN.
+/// HU-05: carga inicial de marcadores desde los datos locales.
 class OfflineMapService {
   Future<List<String>> loadMarkers(
       {required bool online, required List<String> localMarkers}) async {
-    throw UnimplementedError('HU-05: carga offline pendiente');
+    // En esta fase se usa la fuente local con o sin conexion.
+    return List<String>.from(localMarkers);
   }
 }

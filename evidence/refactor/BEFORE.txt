@@ -1,0 +1,11 @@
+00:00 +0: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart
+00:00 +0: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart: RED-01 | HU-05 | Conductor: Reyli | Copiloto: Fabiola | carga marcadores locales sin conexion
+00:00 +1: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart: RED-02 | HU-06 | Conductor: Fabiola | Copiloto: Reyli | evita duplicados y conserva orden FIFO
+00:00 +2: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s06_red_test.dart: RED-03 | HU-07 | Conductor: Reyli | Copiloto: Fabiola | protege coordenadas y restringe acceso exacto
+00:00 +3: loading C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s07_coordinate_protection_test.dart
+00:01 +3: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s07_coordinate_protection_test.dart: HU-07: comprobaciones adicionales de proteccion Cifrar dos veces usa nonces diferentes y permite recuperar el dato
+00:01 +4: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s07_coordinate_protection_test.dart: HU-07: comprobaciones adicionales de proteccion Rechaza un mensaje cuya etiqueta fue alterada
+00:01 +5: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s07_coordinate_protection_test.dart: HU-07: comprobaciones adicionales de proteccion Solo otra instancia con la misma clave puede recuperar el dato
+00:01 +6: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s07_coordinate_protection_test.dart: HU-07: comprobaciones adicionales de proteccion Rechaza datos incompletos o con formato invalido
+00:01 +7: C:/Users/reyli/Documents/GIT/biocampo-app/test/unit/s07_coordinate_protection_test.dart: HU-07: comprobaciones adicionales de proteccion Rechaza claves que no tengan 256 bits
+00:01 +8: All tests passed!

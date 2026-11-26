@@ -1,10 +1,14 @@
-/// HU-06: contrato inicial S06. Pendiente implementar en la fase GREEN.
-class SyncQueueService {
-  Future<void> enqueue(String reportId) async {
-    throw UnimplementedError('HU-06: encolado idempotente pendiente');
-  }
+import 'sync_queue_storage.dart';
 
-  Future<List<String>> pendingIds() async {
-    throw UnimplementedError('HU-06: consulta FIFO pendiente');
-  }
+/// HU-06: cola FIFO de reportes sin duplicados.
+/// Usa memoria por defecto; permite sustituir el almacenamiento.
+class SyncQueueService {
+  final SyncQueueStorage _storage;
+
+  SyncQueueService({SyncQueueStorage? storage})
+      : _storage = storage ?? InMemorySyncQueueStorage();
+
+  Future<void> enqueue(String reportId) => _storage.addIfAbsent(reportId);
+
+  Future<List<String>> pendingIds() => _storage.readAll();
 }
