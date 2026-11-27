@@ -12,7 +12,7 @@ class FotoEvidenciaService {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final rutaRelativa = 'evidencias/evidencia_${reporteId}_$timestamp.jpg';
 
-    final int pesoCalculadoBytes = 286720;
+    const int pesoCalculadoBytes = 286720;
 
     return {
       'reporte_id': reporteId,

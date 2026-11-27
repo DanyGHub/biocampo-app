@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:biocampo_app/core/database/app_database.dart';
+import 'package:biocampo_app/core/network/network_status_service.dart';
 import 'package:biocampo_app/features/auth/domain/services/auth_service.dart';
 import 'package:biocampo_app/features/location/domain/services/location_service.dart';
 import 'package:biocampo_app/features/reports/domain/models/reporte_model.dart';
@@ -12,18 +16,31 @@ import 'package:biocampo_app/features/reports/domain/services/foto_evidencia_ser
 import 'package:biocampo_app/features/reports/domain/services/catalogo_taxonomico_service.dart';
 import 'package:biocampo_app/features/reports/domain/services/csv_export_service.dart';
 import 'package:biocampo_app/features/reports/domain/services/variables_ecologicas_validator.dart';
+import 'package:biocampo_app/features/map/domain/services/offline_map_service.dart';
+import 'package:biocampo_app/features/map/presentation/widgets/offline_field_map_widget.dart';
+import 'package:biocampo_app/features/sync/domain/services/sync_queue_service.dart';
+import 'package:biocampo_app/features/sync/domain/services/sync_queue_storage.dart';
+import 'package:biocampo_app/features/security/domain/services/coordinate_protection_service.dart';
 import 'package:biocampo_app/features/auth/presentation/screens/login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final AuthService authService;
+  final NetworkStatusService? networkStatusService;
+  final TileProvider? mapTileProvider;
 
-  const HomeScreen({super.key, required this.authService});
+  const HomeScreen({
+    super.key,
+    required this.authService,
+    this.networkStatusService,
+    this.mapTileProvider,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late TabController _tabController;
 
   // Estado del Wizard de Generación de Reporte
@@ -43,22 +60,50 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   String _estratoSeleccionado = 'No determinado';
   String _condicionSeleccionada = 'No determinado';
 
-  // Estado de Geolocalización y Base de Datos
+  // Variables Sprint 2: HU-05 (Mapa Real), HU-06 (Cola Sync) y HU-07 (Cifrado AES-256)
+  final OfflineMapService _offlineMapService = OfflineMapService();
+  late final SyncQueueService _syncQueueService;
+  late final NetworkStatusService _networkStatusService;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  final CoordinateProtectionService _protectionService = CoordinateProtectionService.forLocalApp();
+  bool _esEspecieProtegida = false;
+  String? _estatusProteccionDetectado;
+  bool _isOfflineMode = true; // Modo Offline-First activo por defecto para encolar localmente
+  bool _isSyncing = false;
+  List<String> _pendingQueueIds = [];
+  List<OfflineMapMarker> _mapMarkers = [];
+  final Set<int> _revealedReportIds = {};
+  bool _simulateUnauthorizedView = false;
+
+  // Estado de Geolocalización, Conectividad Real y Base de Datos
   GpsTelemetry? _currentTelemetry;
   bool _isLocating = false;
+  bool _hasInternetConnection = false;
+  bool _isCheckingMapAccess = true;
+  String _networkStatusMessage = 'Verificando conectividad de red...';
+  DateTime? _lastTileErrorCheck;
   bool _isSaving = false;
   List<ReporteModel> _reportes = [];
 
   Future<void> _buscarSugerenciasDarwinCore(String query) async {
+    final detectedStatus = CatalogoTaxonomicoService.getProtectionStatus(query, _nombreCientifico);
     if (query.trim().length < 2) {
-      if (mounted && _sugerenciasDarwinCore.isNotEmpty) {
-        setState(() => _sugerenciasDarwinCore = []);
+      if (mounted) {
+        setState(() {
+          _sugerenciasDarwinCore = [];
+          _estatusProteccionDetectado = detectedStatus;
+          if (detectedStatus != null) _esEspecieProtegida = true;
+        });
       }
       return;
     }
     final resultados = await CatalogoTaxonomicoService.buscarEspecieDarwinCore(query: query);
     if (mounted) {
-      setState(() => _sugerenciasDarwinCore = resultados);
+      setState(() {
+        _sugerenciasDarwinCore = resultados;
+        _estatusProteccionDetectado = detectedStatus;
+        if (detectedStatus != null) _esEspecieProtegida = true;
+      });
     }
   }
 
@@ -258,19 +303,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
-  void _generarFotoDemo() {
-    const base64Pixel = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-    final bytes = base64Decode(base64Pixel);
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    setState(() {
-      _fotoBytes = bytes;
-      _fotoBase64 = base64Pixel;
-      _fotoPath = 'evidencias/evidencia_demo_$timestamp.jpg';
-      _fotoSizeBytes = 286720;
-      _fotoSeleccionada = true;
-    });
-  }
-
   Future<void> _exportarCsvRFC4180() async {
     if (_reportes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -295,15 +327,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
 
     if (!mounted) return;
-    showDialog(
+    await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Row(
-          children: const [
+        title: const Row(
+          children: [
             Icon(Icons.file_download_done_rounded, color: Color(0xFF00796B)),
             SizedBox(width: 8),
-            Text('Exportación CSV (RFC 4180)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            Expanded(
+              child: Text('Exportación CSV (RFC 4180)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
           ],
         ),
         content: Column(
@@ -381,41 +415,523 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tabController = TabController(length: 3, vsync: this);
+    _syncQueueService = SyncQueueService(storage: SharedPreferencesSyncQueueStorage());
+    _networkStatusService = widget.networkStatusService ?? NetworkStatusService();
+    _connectivitySubscription = _networkStatusService.onConnectivityChanged.listen(
+      (_) => _checkNetworkStatus(),
+      onError: (_) {},
+    );
     _loadInitialLocationAndReports();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _connectivitySubscription?.cancel();
     _tabController.dispose();
     _especieController.dispose();
     _notasController.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Al volver de ajustes del teléfono (permisos, GPS o Wi-Fi), revalidar acceso al mapa.
+      _recheckMapAccess(requestPermissionIfDenied: false);
+    }
+  }
+
   Future<void> _loadInitialLocationAndReports() async {
     await _refreshReports();
-    await _acquireGpsLocation();
+    await _recheckMapAccess(requestPermissionIfDenied: true);
+  }
+
+  Future<void> _checkNetworkStatus() async {
+    final result = await _networkStatusService.checkInternetStatus();
+    if (!mounted) return;
+    setState(() {
+      _hasInternetConnection = result.hasInternet;
+      _networkStatusMessage = result.message;
+    });
+    await _rebuildMapMarkers();
+  }
+
+  Future<void> _recheckMapAccess({bool requestPermissionIfDenied = false}) async {
+    if (mounted) {
+      setState(() => _isCheckingMapAccess = true);
+    }
+    try {
+      await Future.wait([
+        _checkNetworkStatus(),
+        _acquireGpsLocation(requestPermissionIfDenied: requestPermissionIfDenied),
+      ]);
+    } finally {
+      if (mounted) {
+        setState(() => _isCheckingMapAccess = false);
+      }
+    }
+  }
+
+  void _handleTileNetworkError() {
+    final now = DateTime.now();
+    if (_lastTileErrorCheck != null &&
+        now.difference(_lastTileErrorCheck!) < const Duration(seconds: 6)) {
+      return;
+    }
+    _lastTileErrorCheck = now;
+    _checkNetworkStatus();
   }
 
   Future<void> _refreshReports() async {
     final list = await AppDatabase.instance.getReportes(
       usuarioId: widget.authService.currentUser?.id,
     );
+
+    // Reconciliar cola FIFO con reportes pendientes en SQLite (HU-06)
+    for (final r in list.reversed) {
+      if (r.id != null && r.estadoSync == 'PENDIENTE') {
+        await _syncQueueService.enqueue('reporte-${r.id}');
+      }
+    }
+    final pendingIds = await _syncQueueService.pendingIds();
+
+    final centerLat = _currentTelemetry?.latitude ?? 22.1524;
+    final centerLon = _currentTelemetry?.longitude ?? -102.6142;
+    final markers = await _offlineMapService.buildMapMarkers(
+      centerLat: centerLat,
+      centerLon: centerLon,
+      reportes: list,
+      revealedReportIds: _revealedReportIds,
+      isOnline: _hasInternetConnection && !_isOfflineMode,
+    );
+
     if (mounted) {
-      setState(() => _reportes = list);
+      setState(() {
+        _reportes = list;
+        _pendingQueueIds = pendingIds;
+        _mapMarkers = markers;
+      });
     }
   }
 
-  Future<void> _acquireGpsLocation() async {
-    setState(() => _isLocating = true);
-    final telemetry = await LocationService.getCurrentLocation();
+  Future<void> _rebuildMapMarkers() async {
+    final centerLat = _currentTelemetry?.latitude ?? 22.1524;
+    final centerLon = _currentTelemetry?.longitude ?? -102.6142;
+    final markers = await _offlineMapService.buildMapMarkers(
+      centerLat: centerLat,
+      centerLon: centerLon,
+      reportes: _reportes,
+      revealedReportIds: _revealedReportIds,
+      isOnline: _hasInternetConnection && !_isOfflineMode,
+    );
+    if (mounted) {
+      setState(() => _mapMarkers = markers);
+    }
+  }
+
+  Future<void> _acquireGpsLocation({bool requestPermissionIfDenied = true}) async {
+    if (mounted) {
+      setState(() => _isLocating = true);
+    }
+    final telemetry = await LocationService.getCurrentLocation(
+      requestPermissionIfDenied: requestPermissionIfDenied,
+    );
     if (mounted) {
       setState(() {
         _currentTelemetry = telemetry;
         _isLocating = false;
       });
+      await _rebuildMapMarkers();
     }
+  }
+
+  Future<void> _requestLocationPermissionFromUi() async {
+    final currentState = _currentTelemetry?.accessState;
+
+    if (!kIsWeb && currentState == LocationAccessState.serviceDisabled) {
+      await _handleOpenLocationSettings();
+      return;
+    }
+
+    if (!kIsWeb && currentState == LocationAccessState.deniedForever) {
+      final opened = await LocationService.openDeviceAppSettings();
+      if (!mounted) return;
+      if (opened) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Activa el permiso de Ubicación para BioCampo y regresa a la aplicación.'),
+            backgroundColor: Color(0xFF00796B),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        await _recheckMapAccess(requestPermissionIfDenied: true);
+      }
+      return;
+    }
+
+    await _recheckMapAccess(requestPermissionIfDenied: true);
+
+    if (!mounted) return;
+    final newState = _currentTelemetry?.accessState;
+    if (kIsWeb && newState == LocationAccessState.deniedForever) {
+      _mostrarDialogoPermisoUbicacionWeb();
+    } else if (!kIsWeb && newState == LocationAccessState.deniedForever) {
+      await LocationService.openDeviceAppSettings();
+    }
+  }
+
+  Future<void> _handleOpenLocationSettings() async {
+    if (kIsWeb) {
+      await _requestLocationPermissionFromUi();
+      return;
+    }
+    final opened = await LocationService.openDeviceLocationSettings();
+    if (!mounted) return;
+    if (!opened) {
+      await _recheckMapAccess(requestPermissionIfDenied: true);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Activa la Ubicación / GPS del dispositivo y vuelve a BioCampo.'),
+          backgroundColor: Color(0xFF00796B),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  void _mostrarDialogoPermisoUbicacionWeb() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Row(
+          children: [
+            Icon(Icons.location_off_rounded, color: Color(0xFFC62828)),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Ubicación bloqueada en navegador',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'El navegador bloqueó el acceso a tu ubicación para este sitio.\n\n'
+          'Para otorgar permisos manualmente:\n'
+          '1. Haz clic en el ícono de ajustes o candado junto a la barra URL.\n'
+          '2. Cambia el permiso "Ubicación" a "Permitir".\n'
+          '3. Presiona el botón "Verificar permiso".',
+          style: TextStyle(fontSize: 13.5, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cerrar'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00796B),
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.refresh_rounded, size: 17),
+            label: const Text('Verificar permiso'),
+            onPressed: () {
+              Navigator.pop(ctx);
+              _recheckMapAccess(requestPermissionIfDenied: true);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggleNetworkMode(bool goOnline) async {
+    setState(() => _isOfflineMode = !goOnline);
+    if (goOnline && _pendingQueueIds.isNotEmpty) {
+      await _sincronizarColaFifo();
+    } else {
+      await _rebuildMapMarkers();
+    }
+  }
+
+  Future<void> _sincronizarColaFifo() async {
+    if (_isOfflineMode) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sin conexión de red: los reportes permanecen protegidos en la cola FIFO.'),
+          backgroundColor: Color(0xFFD97706),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSyncing = true);
+    try {
+      final syncedCount = await _syncQueueService.flushQueue(
+        isOnline: true,
+        onSend: (queueId) async {
+          final idStr = queueId.replaceFirst('reporte-', '');
+          final idNum = int.tryParse(idStr);
+          if (idNum != null) {
+            await AppDatabase.instance.updateReporteEstadoSync(idNum, 'SINCRONIZADO');
+          }
+          return true;
+        },
+      );
+      await _refreshReports();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            syncedCount > 0
+                ? 'Sincronización FIFO completada: $syncedCount reporte(s) enviados.'
+                : 'La cola de sincronización está vacía.',
+          ),
+          backgroundColor: const Color(0xFF00796B),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncing = false);
+      }
+    }
+  }
+
+  Future<void> _showSyncQueueModal() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: _isOfflineMode ? const Color(0xFFFEF3C7) : const Color(0xFFE0F2F1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      _isOfflineMode ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
+                      color: _isOfflineMode ? const Color(0xFFD97706) : const Color(0xFF00796B),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Cola de Sincronización (HU-06)',
+                          style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
+                        ),
+                        Text(
+                          'Control FIFO sin duplicados y detección de red',
+                          style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: Color(0xFF64748B)),
+                    onPressed: () => Navigator.of(sheetCtx).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                decoration: BoxDecoration(
+                  color: _hasInternetConnection
+                      ? const Color(0xFFE0F2F1)
+                      : const Color(0xFFFEF2F2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: _hasInternetConnection
+                        ? const Color(0xFF80CBC4)
+                        : const Color(0xFFFCA5A5),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _hasInternetConnection
+                          ? Icons.wifi_rounded
+                          : Icons.wifi_off_rounded,
+                      size: 18,
+                      color: _hasInternetConnection
+                          ? const Color(0xFF00796B)
+                          : const Color(0xFFC62828),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _hasInternetConnection
+                            ? 'Internet del dispositivo: $_networkStatusMessage'
+                            : 'Internet del dispositivo: Sin conexión (Mapa bloqueado)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _hasInternetConnection
+                              ? const Color(0xFF004D40)
+                              : const Color(0xFF991B1B),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      tooltip: 'Verificar internet',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+                      onPressed: () async {
+                        await _checkNetworkStatus();
+                        if (sheetCtx.mounted) setModalState(() {});
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              Material(
+                color: const Color(0xFFF8FAFC),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: SwitchListTile(
+                  title: Text(
+                    _isOfflineMode ? 'Modo Campo Offline (Zero-Cloud)' : 'Conectividad Activa (Wi-Fi / Red)',
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
+                  ),
+                  subtitle: Text(
+                    _isOfflineMode
+                        ? 'Los nuevos reportes se encolan localmente sin pérdida.'
+                        : 'Red disponible: dispara envío FIFO automático.',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                  ),
+                  activeThumbColor: const Color(0xFF00796B),
+                  value: !_isOfflineMode,
+                  onChanged: (goOnline) async {
+                    await _toggleNetworkMode(goOnline);
+                    if (sheetCtx.mounted) setModalState(() {});
+                  },
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Pendientes en Cola FIFO (${_pendingQueueIds.length}):',
+                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+              ),
+              const SizedBox(height: 8),
+              if (_pendingQueueIds.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0F2F1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.check_circle_rounded, color: Color(0xFF00796B)),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Cola vacía: todos los muestreos están sincronizados.',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF004D40)),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 180),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: _pendingQueueIds.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 6),
+                    itemBuilder: (_, i) => Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFFBEB),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFFDE68A)),
+                      ),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 11,
+                            backgroundColor: const Color(0xFFD97706),
+                            child: Text(
+                              '${i + 1}',
+                              style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _pendingQueueIds[i],
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
+                            ),
+                          ),
+                          const Text(
+                            'PENDIENTE',
+                            style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00796B),
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  icon: _isSyncing
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.sync_rounded),
+                  label: Text(
+                    _isOfflineMode ? 'Activa la red para sincronizar' : 'Sincronizar Cola FIFO Ahora',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  onPressed: _isSyncing || _pendingQueueIds.isEmpty
+                      ? null
+                      : () async {
+                          await _sincronizarColaFifo();
+                          if (sheetCtx.mounted) setModalState(() {});
+                        },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _guardarReporteFinal() async {
@@ -446,6 +962,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       condicion: _condicionSeleccionada,
     );
 
+    // Protección criptográfica AES-256-GCM para especies protegidas (HU-07)
+    final esProtegida = _esEspecieProtegida ||
+        CatalogoTaxonomicoService.isProtectedSpecies(especie, _nombreCientifico);
+    final coordPlain = '${telemetry.latitude.toStringAsFixed(6)},${telemetry.longitude.toStringAsFixed(6)}';
+    final encryptedCoords = esProtegida ? _protectionService.protect(coordPlain) : null;
+
     final nuevoReporte = ReporteModel(
       usuarioId: user.id!,
       fechaHora: DateTime.now().toIso8601String(),
@@ -462,10 +984,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       condicion: validadoHabitat['condicion'] as String,
       notas: _notasController.text.trim(),
       estadoSync: 'PENDIENTE',
+      esProtegida: esProtegida,
+      coordenadasCifradas: encryptedCoords,
     );
 
     try {
-      await AppDatabase.instance.insertReporte(nuevoReporte);
+      final insertedId = await AppDatabase.instance.insertReporte(nuevoReporte);
+      await _syncQueueService.enqueue('reporte-$insertedId');
+      if (!_isOfflineMode) {
+        await _sincronizarColaFifo();
+      }
+
       _especieController.clear();
       _notasController.clear();
       _fotoSeleccionada = false;
@@ -478,14 +1007,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       _sustratoSeleccionado = 'No determinado';
       _estratoSeleccionado = 'No determinado';
       _condicionSeleccionada = 'No determinado';
+      _esEspecieProtegida = false;
+      _estatusProteccionDetectado = null;
       _wizardStep = 0; // Regresar inicio del wizard
       await _refreshReports();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Reporte guardado exitosamente.', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-          backgroundColor: Color(0xFF00796B),
+        SnackBar(
+          content: Text(
+            esProtegida
+                ? 'Reporte guardado con coordenadas cifradas AES-256 (HU-07).'
+                : 'Reporte guardado y encolado exitosamente.',
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: const Color(0xFF00796B),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -651,6 +1187,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (user == null || user.id == null) return;
 
     final telemetry = _currentTelemetry ?? await LocationService.getCurrentLocation();
+    final esProtegida = CatalogoTaxonomicoService.isProtectedSpecies(especie);
+    final coordPlain = '${telemetry.latitude.toStringAsFixed(6)},${telemetry.longitude.toStringAsFixed(6)}';
+    final encryptedCoords = esProtegida ? _protectionService.protect(coordPlain) : null;
 
     final reporte = ReporteModel(
       usuarioId: user.id!,
@@ -662,16 +1201,26 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       nombreComun: especie,
       notas: notas.isEmpty ? 'Avistamiento verificado por GNSS in-situ.' : notas,
       estadoSync: 'PENDIENTE',
+      esProtegida: esProtegida,
+      coordenadasCifradas: encryptedCoords,
     );
 
     try {
-      await AppDatabase.instance.insertReporte(reporte);
+      final insertedId = await AppDatabase.instance.insertReporte(reporte);
+      await _syncQueueService.enqueue('reporte-$insertedId');
+      if (!_isOfflineMode) {
+        await _sincronizarColaFifo();
+      }
       await _refreshReports();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('¡Reporte de "$especie" guardado con éxito!'),
+          content: Text(
+            esProtegida
+                ? '¡Reporte de "$especie" guardado con cifrado AES-256!'
+                : '¡Reporte de "$especie" guardado y encolado con éxito!',
+          ),
           backgroundColor: const Color(0xFF00796B),
           behavior: SnackBarBehavior.floating,
         ),
@@ -780,6 +1329,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     try {
       final success = await AppDatabase.instance.deleteReporte(reporte.id!);
       if (success) {
+        await _syncQueueService.remove('reporte-${reporte.id}');
+        _revealedReportIds.remove(reporte.id);
         await _refreshReports();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1184,8 +1735,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               text: 'Reportes Guardados',
             ),
             Tab(
-              icon: Icon(Icons.satellite_alt_rounded, size: 21),
-              text: 'Geolocalización',
+              icon: Icon(Icons.map_rounded, size: 21),
+              text: 'Mapa y GPS',
             ),
           ],
         ),
@@ -1193,7 +1744,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       body: SafeArea(
         child: Column(
           children: [
-            // Banner superior de Usuario activo (compacto y sutil)
+            // Banner superior de Usuario activo y estado de red / cola FIFO (HU-06)
             Container(
               color: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
@@ -1225,22 +1776,43 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       ],
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE0F2F1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.circle, color: Color(0xFF00796B), size: 8),
-                        SizedBox(width: 4),
-                        Text(
-                          'En Línea',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF004D40)),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: _showSyncQueueModal,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: _isOfflineMode
+                            ? const Color(0xFFFEF3C7)
+                            : (_pendingQueueIds.isEmpty ? const Color(0xFFE0F2F1) : const Color(0xFFE0F2FE)),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: _isOfflineMode
+                              ? const Color(0xFFFCD34D)
+                              : const Color(0xFF80CBC4),
                         ),
-                      ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _isOfflineMode ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
+                            color: _isOfflineMode ? const Color(0xFFB45309) : const Color(0xFF00796B),
+                            size: 14,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            _isOfflineMode
+                                ? 'Offline · ${_pendingQueueIds.length} cola'
+                                : (_pendingQueueIds.isEmpty ? 'En Línea' : 'Sync (${_pendingQueueIds.length})'),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: _isOfflineMode ? const Color(0xFF92400E) : const Color(0xFF004D40),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -1252,7 +1824,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             Expanded(
               child: TabBarView(
                 controller: _tabController,
-                physics: const BouncingScrollPhysics(),
                 children: [
                   // PESTAÑA 1: GENERAR REPORTE (POR FASES / ASISTENTE)
                   _buildGenerarReporteTab(),
@@ -1478,11 +2049,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: const [
+                const Row(
+                  children: [
                     Icon(Icons.auto_awesome, size: 14, color: Color(0xFF15803D)),
                     SizedBox(width: 4),
-                    Text('Sugerencias Darwin Core (Autocompletado predictivo <200 ms):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF15803D))),
+                    Expanded(
+                      child: Text('Sugerencias Darwin Core (Autocompletado predictivo <200 ms):', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF15803D))),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -1494,10 +2067,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     side: const BorderSide(color: Color(0xFF86EFAC)),
                     label: Text('${s['vernacularName']} (${s['scientificName']})', style: const TextStyle(fontSize: 11.5, color: Color(0xFF166534))),
                     onPressed: () {
+                      final sci = s['scientificName'];
+                      final vern = s['vernacularName'] ?? '';
+                      final status = s['protectedStatus'] ??
+                          CatalogoTaxonomicoService.getProtectionStatus(vern, sci);
                       setState(() {
-                        _especieController.text = '${s['vernacularName']} (${s['scientificName']})';
-                        _nombreCientifico = s['scientificName'];
+                        _especieController.text = '$vern ($sci)';
+                        _nombreCientifico = sci;
                         _sugerenciasDarwinCore.clear();
+                        _estatusProteccionDetectado = status;
+                        if (status != null) {
+                          _esEspecieProtegida = true;
+                        }
                       });
                     },
                   )).toList(),
@@ -1506,6 +2087,42 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             ),
           ),
         ],
+        const SizedBox(height: 14),
+        // Tarjeta de Protección Criptográfica AES-256-GCM (HU-07)
+        Material(
+          color: _esEspecieProtegida ? const Color(0xFFFFFBEB) : const Color(0xFFF8FAFC),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(
+              color: _esEspecieProtegida ? const Color(0xFFF59E0B) : const Color(0xFFE2E8F0),
+              width: _esEspecieProtegida ? 1.4 : 1.0,
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: SwitchListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            secondary: Icon(
+              _esEspecieProtegida ? Icons.shield_rounded : Icons.security_outlined,
+              color: _esEspecieProtegida ? const Color(0xFFD97706) : const Color(0xFF64748B),
+            ),
+            title: const Text(
+              'Proteger Coordenadas (HU-07 · AES-256)',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
+            ),
+            subtitle: Text(
+              _estatusProteccionDetectado != null
+                  ? 'Detectada: $_estatusProteccionDetectado'
+                  : 'Cifra coordenadas exactas y ofusca ±5 km en mapas públicos.',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: _esEspecieProtegida ? const Color(0xFFB45309) : const Color(0xFF64748B),
+              ),
+            ),
+            activeThumbColor: const Color(0xFFD97706),
+            value: _esEspecieProtegida,
+            onChanged: (val) => setState(() => _esEspecieProtegida = val),
+          ),
+        ),
         const SizedBox(height: 16),
         const Text('Variables Ecológicas de Hábitat (HU-04 Selectores One-Hand) *', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
         const SizedBox(height: 8),
@@ -1576,15 +2193,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'Fase 2: Ubicación Satelital',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
+            const Expanded(
+              child: Text(
+                'Fase 2: Ubicación Satelital',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
+              ),
             ),
             IconButton(
               icon: _isLocating
                   ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Icon(Icons.refresh_rounded, color: Color(0xFF00796B)),
-              onPressed: _isLocating ? null : _acquireGpsLocation,
+              : const Icon(Icons.refresh_rounded, color: Color(0xFF00796B)),
+              onPressed: _isLocating ? null : () => _recheckMapAccess(requestPermissionIfDenied: true),
             ),
           ],
         ),
@@ -1595,6 +2214,29 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         ),
         const SizedBox(height: 18),
         if (_currentTelemetry != null) ...[
+          if (!_currentTelemetry!.hasMapAuthorization) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFCA5A5)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFC62828)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _currentTelemetry!.statusMessage,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF991B1B)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           Row(
             children: [
               _buildMetricBox('Latitud', _currentTelemetry!.latitude.toStringAsFixed(6)),
@@ -1609,6 +2251,24 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               const SizedBox(width: 10),
               _buildMetricBox('Precisión GNSS', '±${_currentTelemetry!.accuracy.toStringAsFixed(1)} m'),
             ],
+          ),
+          const SizedBox(height: 16),
+          OfflineFieldMapWidget(
+            centerLat: _currentTelemetry!.latitude,
+            centerLon: _currentTelemetry!.longitude,
+            accuracyMeters: _currentTelemetry!.accuracy,
+            markers: _mapMarkers,
+            height: 225,
+            compact: true,
+            locationAccessState: _currentTelemetry!.accessState,
+            hasInternet: _hasInternetConnection,
+            isCheckingAccess: _isCheckingMapAccess || _isLocating,
+            onRecenter: () => _recheckMapAccess(requestPermissionIfDenied: true),
+            onRequestLocationPermission: _requestLocationPermissionFromUi,
+            onOpenLocationSettings: _handleOpenLocationSettings,
+            onRetryConnection: () => _recheckMapAccess(requestPermissionIfDenied: false),
+            onTileNetworkError: _handleTileNetworkError,
+            customTileProvider: widget.mapTileProvider,
           ),
         ] else ...[
           const Center(child: Padding(padding: EdgeInsets.all(16), child: Text('Adquiriendo satélites...'))),
@@ -1868,6 +2528,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     : 'Pendientes',
               ),
               const Divider(height: 16),
+              _summaryRow(
+                'Seguridad (HU-07):',
+                _esEspecieProtegida
+                    ? '🔒 Especie protegida · Cifrado AES-256-GCM'
+                    : 'Estándar (Coordenadas públicas)',
+              ),
+              const Divider(height: 16),
+              _summaryRow(
+                'Sincronización (HU-06):',
+                _isOfflineMode ? 'En cola FIFO local (Offline)' : 'Envío inmediato al guardar',
+              ),
+              const Divider(height: 16),
               _summaryRow('Fotografía (HU-01):', _fotoSeleccionada ? '${_fotoPath ?? "captura_campo.jpg"} (Comprimida ≤ 350 KB)' : 'Sin foto adjunta'),
               if (_fotoBytes != null) ...[
                 const SizedBox(height: 12),
@@ -1945,9 +2617,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Reportes Guardados',
-                style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
+              const Flexible(
+                child: Text(
+                  'Reportes Guardados',
+                  style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1956,6 +2631,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF00796B),
                       foregroundColor: Colors.white,
+                      minimumSize: const Size(0, 36),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
@@ -1977,6 +2653,92 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           Text(
             'Total: ${_reportes.length} avistamientos persistidos en la base SQLite local.',
             style: const TextStyle(fontSize: 13.5, color: Color(0xFF64748B)),
+          ),
+          const SizedBox(height: 12),
+
+          // Panel interactivo de Cola FIFO (HU-06) y Control de Acceso AES-256 (HU-07)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      _isOfflineMode ? Icons.cloud_off_rounded : Icons.cloud_done_rounded,
+                      color: _isOfflineMode ? const Color(0xFFD97706) : const Color(0xFF00796B),
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _isOfflineMode
+                            ? 'Cola FIFO Offline: ${_pendingQueueIds.length} pendiente(s)'
+                            : 'Red Activa · ${_pendingQueueIds.length} pendiente(s)',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
+                      ),
+                    ),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        minimumSize: const Size(0, 32),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: const Icon(Icons.queue_rounded, size: 15, color: Color(0xFF00796B)),
+                      label: const Text('Cola / Red', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF00796B))),
+                      onPressed: _showSyncQueueModal,
+                    ),
+                  ],
+                ),
+                const Divider(height: 14),
+                Row(
+                  children: [
+                    Icon(
+                      _simulateUnauthorizedView ? Icons.visibility_off_rounded : Icons.verified_user_rounded,
+                      size: 18,
+                      color: _simulateUnauthorizedView ? const Color(0xFFC62828) : const Color(0xFF00796B),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _simulateUnauthorizedView
+                            ? 'Vista Pública (Sin permiso AES-256)'
+                            : 'Perfil Autorizado (${user?.rol ?? "Investigador"})',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _simulateUnauthorizedView ? const Color(0xFFC62828) : const Color(0xFF334155),
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        minimumSize: const Size(0, 28),
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _simulateUnauthorizedView = !_simulateUnauthorizedView;
+                          if (_simulateUnauthorizedView) {
+                            _revealedReportIds.clear();
+                          }
+                        });
+                        _rebuildMapMarkers();
+                      },
+                      child: Text(
+                        _simulateUnauthorizedView ? 'Restaurar acceso' : 'Probar sin permiso',
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF0284C7)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
 
@@ -2127,23 +2889,27 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       ),
                       const SizedBox(height: 6),
 
-                      // Coordenadas satelitales
-                      Row(
-                        children: [
-                          const Icon(Icons.pin_drop_rounded, size: 16, color: Color(0xFF00796B)),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              '${r.latitud.toStringAsFixed(5)}, ${r.longitud.toStringAsFixed(5)}',
-                              style: const TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF0F2F38),
+                      // Coordenadas satelitales y protección AES-256-GCM (HU-07)
+                      if (r.esProtegida) ...[
+                        _buildProtectedCoordinateBox(r, user != null && !_simulateUnauthorizedView),
+                      ] else ...[
+                        Row(
+                          children: [
+                            const Icon(Icons.pin_drop_rounded, size: 16, color: Color(0xFF00796B)),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                '${r.latitud.toStringAsFixed(5)}, ${r.longitud.toStringAsFixed(5)}',
+                                style: const TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF0F2F38),
+                                ),
                               ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 6),
 
                       // Telemetría de Altitud y Precisión GNSS
@@ -2151,32 +2917,69 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         children: [
                           const Icon(Icons.satellite_alt_rounded, size: 16, color: Color(0xFF64748B)),
                           const SizedBox(width: 6),
-                          Text(
-                            'Precisión: ±${r.precisionGps.toStringAsFixed(1)} m · Altitud: ${r.altitud.toStringAsFixed(1)} m',
-                            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
+                          Expanded(
+                            child: Text(
+                              'Precisión: ±${r.precisionGps.toStringAsFixed(1)} m · Altitud: ${r.altitud.toStringAsFixed(1)} m',
+                              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: Color(0xFF64748B)),
+                            ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 8),
 
-                      // Badge de calidad RNF-05
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: meetsRnf05 ? const Color(0xFFE0F2F1) : const Color(0xFFFFF7ED),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: meetsRnf05 ? const Color(0xFF80CBC4) : const Color(0xFFFED7AA),
+                      // Badges de calidad RNF-05 y Cola FIFO HU-06
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: meetsRnf05 ? const Color(0xFFE0F2F1) : const Color(0xFFFFF7ED),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: meetsRnf05 ? const Color(0xFF80CBC4) : const Color(0xFFFED7AA),
+                              ),
+                            ),
+                            child: Text(
+                              meetsRnf05 ? 'GNSS RNF-05 Cumplido' : 'Precisión Aceptable',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: meetsRnf05 ? const Color(0xFF004D40) : const Color(0xFFC2410C),
+                              ),
+                            ),
                           ),
-                        ),
-                        child: Text(
-                          meetsRnf05 ? 'GNSS de Alta Precisión (RNF-05 Cumplido)' : 'Precisión Satelital Aceptable',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.bold,
-                            color: meetsRnf05 ? const Color(0xFF004D40) : const Color(0xFFC2410C),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: r.estadoSync == 'SINCRONIZADO' ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: r.estadoSync == 'SINCRONIZADO' ? const Color(0xFF86EFAC) : const Color(0xFFFCD34D),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  r.estadoSync == 'SINCRONIZADO' ? Icons.cloud_done_rounded : Icons.schedule_rounded,
+                                  size: 13,
+                                  color: r.estadoSync == 'SINCRONIZADO' ? const Color(0xFF15803D) : const Color(0xFFB45309),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  r.estadoSync == 'SINCRONIZADO' ? 'SINCRONIZADO' : 'PENDIENTE · Cola FIFO',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: r.estadoSync == 'SINCRONIZADO' ? const Color(0xFF166534) : const Color(0xFF92400E),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
+                        ],
                       ),
                       const SizedBox(height: 8),
 
@@ -2305,14 +3108,53 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   // =========================================================================
-  // PESTAÑA 3: GEOLOCALIZACIÓN SATELITAL GNSS
+  // PESTAÑA 3: MAPA REAL CON PERMISOS, CONECTIVIDAD Y GEOLOCALIZACIÓN GNSS (HU-05)
   // =========================================================================
   Widget _buildGeolocalizacionTab() {
+    final centerLat = _currentTelemetry?.latitude ?? 22.1524;
+    final centerLon = _currentTelemetry?.longitude ?? -102.6142;
+    final accuracy = _currentTelemetry?.accuracy ?? 3.5;
+    final accessState = _currentTelemetry?.accessState ?? LocationAccessState.denied;
+    final canShowMapLegend = accessState == LocationAccessState.granted && _hasInternetConnection;
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 18.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Visor Cartográfico Real Interactivo (solo visible con permisos + internet)
+          OfflineFieldMapWidget(
+            centerLat: centerLat,
+            centerLon: centerLon,
+            accuracyMeters: accuracy,
+            markers: _mapMarkers,
+            height: 410,
+            locationAccessState: accessState,
+            hasInternet: _hasInternetConnection,
+            isCheckingAccess: _isCheckingMapAccess || _isLocating,
+            onRecenter: () => _recheckMapAccess(requestPermissionIfDenied: true),
+            onRequestLocationPermission: _requestLocationPermissionFromUi,
+            onOpenLocationSettings: _handleOpenLocationSettings,
+            onRetryConnection: () => _recheckMapAccess(requestPermissionIfDenied: false),
+            onTileNetworkError: _handleTileNetworkError,
+            customTileProvider: widget.mapTileProvider,
+          ),
+          if (canShowMapLegend) ...[
+            const SizedBox(height: 10),
+            // Leyenda cartográfica compacta
+            const Wrap(
+              spacing: 12,
+              runSpacing: 6,
+              alignment: WrapAlignment.center,
+              children: [
+                _MapLegendDot(color: Color(0xFF1A73E8), label: 'Mi Ubicación'),
+                _MapLegendDot(color: Color(0xFF00796B), label: 'Avistamiento'),
+                _MapLegendDot(color: Color(0xFFD97706), label: 'Protegida (±5 km)'),
+              ],
+            ),
+          ],
+          const SizedBox(height: 16),
+
           // Tarjeta 1: Sensor Satelital GNSS en Vivo
           Container(
             decoration: BoxDecoration(
@@ -2334,31 +3176,67 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.satellite_alt_rounded, color: Color(0xFF00796B), size: 24),
-                        SizedBox(width: 8),
-                        Text(
-                          'Sensor Satelital GNSS',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
-                        ),
-                      ],
+                    const Expanded(
+                      child: Row(
+                        children: [
+                          Icon(Icons.satellite_alt_rounded, color: Color(0xFF00796B), size: 24),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Sensor Satelital GNSS',
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     IconButton(
                       icon: _isLocating
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.refresh_rounded, color: Color(0xFF00796B)),
-                      tooltip: 'Actualizar satélites',
-                      onPressed: _isLocating ? null : _acquireGpsLocation,
+                      tooltip: 'Actualizar satélites y red',
+                      onPressed: _isLocating ? null : () => _recheckMapAccess(requestPermissionIfDenied: true),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Telemetría de posición en tiempo real obtenida mediante satélites.',
+                  'Telemetría de posición real del dispositivo y estado de conectividad para mapas.',
                   style: TextStyle(fontSize: 13.5, color: Color(0xFF64748B)),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
+                // Indicador de Conectividad a Internet para el Mapa
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _hasInternetConnection ? const Color(0xFFF0FDF4) : const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: _hasInternetConnection ? const Color(0xFF86EFAC) : const Color(0xFFFCA5A5),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _hasInternetConnection ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+                        size: 17,
+                        color: _hasInternetConnection ? const Color(0xFF15803D) : const Color(0xFFC62828),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Red de Mapas: $_networkStatusMessage',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _hasInternetConnection ? const Color(0xFF166534) : const Color(0xFF991B1B),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
 
                 if (_currentTelemetry != null) ...[
                   Row(
@@ -2401,33 +3279,45 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     ),
                   ),
                   const SizedBox(height: 12),
-                  // Badge de calidad RNF-05
+                  // Badge de autorización / calidad RNF-05
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: _currentTelemetry!.isHighPrecision ? const Color(0xFFE0F2F1) : const Color(0xFFFFF7ED),
+                      color: !_currentTelemetry!.hasMapAuthorization
+                          ? const Color(0xFFFEF2F2)
+                          : (_currentTelemetry!.isHighPrecision ? const Color(0xFFE0F2F1) : const Color(0xFFFFF7ED)),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: _currentTelemetry!.isHighPrecision ? const Color(0xFF80CBC4) : const Color(0xFFFED7AA),
+                        color: !_currentTelemetry!.hasMapAuthorization
+                            ? const Color(0xFFFCA5A5)
+                            : (_currentTelemetry!.isHighPrecision ? const Color(0xFF80CBC4) : const Color(0xFFFED7AA)),
                       ),
                     ),
                     child: Row(
                       children: [
                         Icon(
-                          _currentTelemetry!.isHighPrecision ? Icons.verified_rounded : Icons.warning_amber_rounded,
-                          color: _currentTelemetry!.isHighPrecision ? const Color(0xFF00796B) : const Color(0xFFEA580C),
+                          !_currentTelemetry!.hasMapAuthorization
+                              ? Icons.location_off_rounded
+                              : (_currentTelemetry!.isHighPrecision ? Icons.verified_rounded : Icons.warning_amber_rounded),
+                          color: !_currentTelemetry!.hasMapAuthorization
+                              ? const Color(0xFFC62828)
+                              : (_currentTelemetry!.isHighPrecision ? const Color(0xFF00796B) : const Color(0xFFEA580C)),
                           size: 20,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            _currentTelemetry!.isHighPrecision
-                                ? 'Precisión Satelital Óptima (±${_currentTelemetry!.accuracy.toStringAsFixed(1)} m) · Cumple RNF-05 (≤ 5 m)'
-                                : 'Calibrando Señal GNSS (±${_currentTelemetry!.accuracy.toStringAsFixed(1)} m)',
+                            !_currentTelemetry!.hasMapAuthorization
+                                ? _currentTelemetry!.statusMessage
+                                : (_currentTelemetry!.isHighPrecision
+                                    ? 'Ubicación Real Autorizada (±${_currentTelemetry!.accuracy.toStringAsFixed(1)} m) · Cumple RNF-05 (≤ 5 m)'
+                                    : 'Ubicación Real Autorizada (±${_currentTelemetry!.accuracy.toStringAsFixed(1)} m)'),
                             style: TextStyle(
                               fontSize: 12.5,
                               fontWeight: FontWeight.w600,
-                              color: _currentTelemetry!.isHighPrecision ? const Color(0xFF004D40) : const Color(0xFFC2410C),
+                              color: !_currentTelemetry!.hasMapAuthorization
+                                  ? const Color(0xFF991B1B)
+                                  : (_currentTelemetry!.isHighPrecision ? const Color(0xFF004D40) : const Color(0xFFC2410C)),
                             ),
                           ),
                         ),
@@ -2448,9 +3338,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     ),
                     icon: _isLocating
                         ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.gps_fixed_rounded),
-                    label: const Text('Actualizar Coordenadas GPS', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold)),
-                    onPressed: _isLocating ? null : _acquireGpsLocation,
+                        : Icon(_currentTelemetry?.hasMapAuthorization == true
+                            ? Icons.gps_fixed_rounded
+                            : Icons.my_location_rounded),
+                    label: Text(
+                      _currentTelemetry?.hasMapAuthorization == true
+                          ? 'Actualizar Coordenadas GPS'
+                          : 'Otorgar Permisos de Ubicación',
+                      style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: _isLocating
+                        ? null
+                        : (_currentTelemetry?.hasMapAuthorization == true
+                            ? () => _recheckMapAccess(requestPermissionIfDenied: true)
+                            : _requestLocationPermissionFromUi),
                   ),
                 ),
               ],
@@ -2481,9 +3382,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   children: [
                     Icon(Icons.verified_user_rounded, color: Color(0xFF00796B), size: 24),
                     SizedBox(width: 8),
-                    Text(
-                      'Operación Verificable',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
+                    Expanded(
+                      child: Text(
+                        'Operación Verificable',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F2F38)),
+                      ),
                     ),
                   ],
                 ),
@@ -2530,6 +3433,122 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
+  Widget _buildProtectedCoordinateBox(ReporteModel r, bool canAuthorize) {
+    final isRevealed = r.id != null && _revealedReportIds.contains(r.id) && canAuthorize;
+    final String? decrypted = isRevealed && r.coordenadasCifradas != null
+        ? _protectionService.reveal(r.coordenadasCifradas!, authorized: canAuthorize)
+        : null;
+    final obfuscated = CoordinateProtectionService.obfuscateCoordinate(
+      r.latitud,
+      r.longitud,
+      seed: r.id ?? r.nombreComun.hashCode,
+    );
+    final cipherPreview = r.coordenadasCifradas != null && r.coordenadasCifradas!.length > 22
+        ? '${r.coordenadasCifradas!.substring(0, 22)}...'
+        : (r.coordenadasCifradas ?? 'AES-256-GCM');
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isRevealed ? const Color(0xFFF0FDF4) : const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isRevealed ? const Color(0xFF86EFAC) : const Color(0xFFFCD34D),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isRevealed ? Icons.lock_open_rounded : Icons.lock_rounded,
+                size: 16,
+                color: isRevealed ? const Color(0xFF15803D) : const Color(0xFFD97706),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  isRevealed
+                      ? 'Coordenadas Exactas Descifradas (AES-256-GCM)'
+                      : 'Especie Protegida · Coordenadas Cifradas (HU-07)',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.bold,
+                    color: isRevealed ? const Color(0xFF166534) : const Color(0xFFB45309),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            isRevealed
+                ? 'WGS84 Exacto: ${decrypted ?? "${r.latitud.toStringAsFixed(6)}, ${r.longitud.toStringAsFixed(6)}"}'
+                : 'Área ofuscada (±5 km): ${obfuscated.lat.toStringAsFixed(4)}, ${obfuscated.lon.toStringAsFixed(4)}',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF0F2F38)),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            'Token cifrado: $cipherPreview',
+            style: const TextStyle(fontSize: 10.5, fontFamily: 'monospace', color: Color(0xFF64748B)),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                minimumSize: const Size(0, 32),
+                side: BorderSide(
+                  color: isRevealed ? const Color(0xFF15803D) : const Color(0xFFD97706),
+                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              icon: Icon(
+                isRevealed ? Icons.visibility_off_rounded : Icons.vpn_key_rounded,
+                size: 14,
+                color: isRevealed ? const Color(0xFF15803D) : const Color(0xFFB45309),
+              ),
+              label: Text(
+                isRevealed ? 'Ocultar Exactas' : 'Revelar Exactas',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.bold,
+                  color: isRevealed ? const Color(0xFF15803D) : const Color(0xFFB45309),
+                ),
+              ),
+              onPressed: () {
+                if (isRevealed && r.id != null) {
+                  setState(() => _revealedReportIds.remove(r.id));
+                  _rebuildMapMarkers();
+                  return;
+                }
+                final check = r.coordenadasCifradas != null
+                    ? _protectionService.reveal(r.coordenadasCifradas!, authorized: canAuthorize)
+                    : (canAuthorize ? '${r.latitud},${r.longitud}' : null);
+                if (check == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Acceso denegado (HU-07): el perfil actual no tiene autorización para descifrar coordenadas.'),
+                      backgroundColor: Color(0xFFC62828),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+                if (r.id != null) {
+                  setState(() => _revealedReportIds.add(r.id!));
+                  _rebuildMapMarkers();
+                }
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMetricBox(String label, String value) {
     return Expanded(
       child: Container(
@@ -2548,6 +3567,32 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ],
         ),
       ),
+    );
+  }
+}
+
+class _MapLegendDot extends StatelessWidget {
+  final Color color;
+  final String label;
+
+  const _MapLegendDot({required this.color, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+        ),
+      ],
     );
   }
 }

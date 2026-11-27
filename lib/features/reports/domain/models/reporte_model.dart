@@ -1,7 +1,7 @@
 /// Modelo de Dominio: Reporte de Avistamiento de Biodiversidad
 /// Representa el registro de campo generado por un biólogo en una expedición.
 /// Posee una relación relacional N:1 con la entidad Usuario (usuario_id).
-/// Incluye campos del Incremento del Sprint 1 (HU-01 a HU-04: foto, taxonomía Darwin Core y hábitat).
+/// Incluye campos del Incremento del Sprint 1 (HU-01 a HU-04) y Sprint 2 (HU-07 cifrado).
 class ReporteModel {
   final int? id;
   final int usuarioId; // Clave foránea (FK) hacia tabla 'usuario'
@@ -22,6 +22,10 @@ class ReporteModel {
   final String estrato; // Variable ecológica de microhábitat (HU-04)
   final String condicion; // Variable ecológica de microhábitat (HU-04)
 
+  // Incremento Sprint 2: HU-07 (Seguridad y cifrado de especies protegidas)
+  final bool esProtegida;
+  final String? coordenadasCifradas;
+
   const ReporteModel({
     this.id,
     required this.usuarioId,
@@ -39,6 +43,8 @@ class ReporteModel {
     this.sustrato = 'No determinado',
     this.estrato = 'No determinado',
     this.condicion = 'No determinado',
+    this.esProtegida = false,
+    this.coordenadasCifradas,
   });
 
   /// Mapeo desde registro de SQLite / JSON
@@ -60,6 +66,8 @@ class ReporteModel {
       sustrato: (map['sustrato'] as String?) ?? 'No determinado',
       estrato: (map['estrato'] as String?) ?? 'No determinado',
       condicion: (map['condicion'] as String?) ?? 'No determinado',
+      esProtegida: map['es_protegida'] == true || map['es_protegida'] == 1,
+      coordenadasCifradas: map['coordenadas_cifradas'] as String?,
     );
   }
 
@@ -81,6 +89,8 @@ class ReporteModel {
       'sustrato': sustrato,
       'estrato': estrato,
       'condicion': condicion,
+      'es_protegida': esProtegida ? 1 : 0,
+      'coordenadas_cifradas': coordenadasCifradas,
     };
     if (id != null) {
       map['id'] = id;
@@ -105,6 +115,8 @@ class ReporteModel {
     String? sustrato,
     String? estrato,
     String? condicion,
+    bool? esProtegida,
+    String? coordenadasCifradas,
   }) {
     return ReporteModel(
       id: id ?? this.id,
@@ -123,11 +135,13 @@ class ReporteModel {
       sustrato: sustrato ?? this.sustrato,
       estrato: estrato ?? this.estrato,
       condicion: condicion ?? this.condicion,
+      esProtegida: esProtegida ?? this.esProtegida,
+      coordenadasCifradas: coordenadasCifradas ?? this.coordenadasCifradas,
     );
   }
 
   @override
   String toString() {
-    return 'ReporteModel(id: $id, usuarioId: $usuarioId, especie: $nombreComun, sci: $nombreCientifico, sustrato: $sustrato, estrato: $estrato, condicion: $condicion, foto: $fotoPath, lat: $latitud, lon: $longitud, sync: $estadoSync)';
+    return 'ReporteModel(id: $id, usuarioId: $usuarioId, especie: $nombreComun, sci: $nombreCientifico, protegida: $esProtegida, lat: $latitud, lon: $longitud, sync: $estadoSync)';
   }
 }

@@ -1,11 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:biocampo_app/core/network/network_status_service.dart';
 import 'package:biocampo_app/features/auth/domain/services/auth_service.dart';
 import '../../../home/presentation/screens/home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final AuthService authService;
+  final NetworkStatusService? networkStatusService;
+  final TileProvider? mapTileProvider;
 
-  const LoginScreen({super.key, required this.authService});
+  const LoginScreen({
+    super.key,
+    required this.authService,
+    this.networkStatusService,
+    this.mapTileProvider,
+  });
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -52,7 +61,11 @@ class _LoginScreenState extends State<LoginScreen> {
       // Transición directa y fluida a la pantalla principal
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (_) => HomeScreen(authService: widget.authService),
+          builder: (_) => HomeScreen(
+            authService: widget.authService,
+            networkStatusService: widget.networkStatusService,
+            mapTileProvider: widget.mapTileProvider,
+          ),
         ),
       );
     } else {

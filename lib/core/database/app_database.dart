@@ -16,7 +16,7 @@ class AppDatabase {
   AppDatabase._internal();
 
   static const String _dbName = 'biocampo_local.db';
-  static const int _dbVersion = 2;
+  static const int _dbVersion = 3;
   static const String _webReportsKey = 'biocampo_web_reports_json';
 
   sqflite.Database? _sqliteDb;
@@ -107,6 +107,8 @@ class AppDatabase {
         condicion TEXT DEFAULT 'No determinado',
         notas TEXT,
         estado_sync TEXT NOT NULL DEFAULT 'PENDIENTE',
+        es_protegida INTEGER NOT NULL DEFAULT 0,
+        coordenadas_cifradas TEXT,
         FOREIGN KEY (usuario_id) REFERENCES usuario (id) ON DELETE CASCADE
       );
     ''');
@@ -152,6 +154,8 @@ class AppDatabase {
         'sustrato': "TEXT DEFAULT 'No determinado'",
         'estrato': "TEXT DEFAULT 'No determinado'",
         'condicion': "TEXT DEFAULT 'No determinado'",
+        'es_protegida': 'INTEGER NOT NULL DEFAULT 0',
+        'coordenadas_cifradas': 'TEXT',
       };
 
       for (var entry in requiredColumns.entries) {
@@ -488,6 +492,29 @@ class AppDatabase {
       final index = _memReportes.indexWhere((r) => r['id'] == reporte.id);
       if (index != -1) {
         _memReportes[index] = reporte.toMap();
+        if (kIsWeb) {
+          await _saveWebReports();
+        }
+        return true;
+      }
+      return false;
+    }
+  }
+
+  /// Actualiza el estado de sincronización (PENDIENTE / SINCRONIZADO) de un reporte (HU-06)
+  Future<bool> updateReporteEstadoSync(int id, String estadoSync) async {
+    if (_sqliteDb != null) {
+      final rows = await _sqliteDb!.update(
+        'reporte_avistamiento',
+        {'estado_sync': estadoSync},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+      return rows > 0;
+    } else {
+      final index = _memReportes.indexWhere((r) => r['id'] == id);
+      if (index != -1) {
+        _memReportes[index]['estado_sync'] = estadoSync;
         if (kIsWeb) {
           await _saveWebReports();
         }

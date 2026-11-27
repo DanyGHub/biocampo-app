@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:pointycastle/export.dart';
 
 /// HU-07: AES-256-GCM con acceso condicionado por el contrato inicial.
@@ -23,6 +24,22 @@ class CoordinateProtectionService {
     }
     _key =
         key == null ? _randomBytes(_keyLengthBytes) : Uint8List.fromList(key);
+  }
+
+  /// Instancia determinista de 256 bits para descifrado local persistente de reportes protegidos
+  factory CoordinateProtectionService.forLocalApp({String salt = 'BioCampo_NOM059_2026_AES256'}) {
+    final digest = sha256.convert(utf8.encode('BioCampo::ProteccionEspecies::$salt'));
+    return CoordinateProtectionService(key: Uint8List.fromList(digest.bytes));
+  }
+
+  /// Aplica ofuscación radial (~4 a 5 km) para capas públicas y vistas sin autorización
+  static ({double lat, double lon}) obfuscateCoordinate(double lat, double lon, {int seed = 42}) {
+    final angle = ((seed * 137.5) % 360) * (pi / 180.0);
+    const radiusDeg = 0.038; // ~4.2 km en latitudes medias
+    return (
+      lat: lat + radiusDeg * cos(angle),
+      lon: lon + radiusDeg * sin(angle),
+    );
   }
 
   String protect(String coordinate) {

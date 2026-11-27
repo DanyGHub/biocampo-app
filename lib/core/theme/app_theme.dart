@@ -76,7 +76,7 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          minimumSize: const Size.fromHeight(54.0),
+          minimumSize: const Size(64.0, 48.0),
           backgroundColor: buttonGreen,
           foregroundColor: Colors.white,
           elevation: 2.0,

@@ -1,0 +1,8 @@
+{
+  "dart.env": {
+    "CHROME_EXECUTABLE": "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"
+  },
+  "dart.devToolsBrowser": "default",
+  "dart.flutterShowWebServerDevice": "always",
+  "dart.flutterWidgetPreviewLocation": "beside"
+}

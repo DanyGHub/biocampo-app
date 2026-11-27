@@ -1,0 +1,38 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "BioCampo Web (Brave - Debug)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "deviceId": "chrome",
+      "env": {
+        "CHROME_EXECUTABLE": "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"
+      }
+    },
+    {
+      "name": "BioCampo Web (Brave - Release)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "deviceId": "chrome",
+      "flutterMode": "release",
+      "env": {
+        "CHROME_EXECUTABLE": "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"
+      }
+    },
+    {
+      "name": "BioCampo Web (Pestaña VSCode · web-server)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "deviceId": "web-server",
+      "suppressWebServerDeviceBrowserLaunch": true,
+      "toolArgs": [
+        "--web-port=8085",
+        "--web-hostname=127.0.0.1"
+      ]
+    }
+  ]
+}
